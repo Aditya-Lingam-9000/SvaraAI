@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
         hapticEngine = HapticFeedbackEngine(this)
         database = AppDatabase.getInstance(this)
         audioRecorder = AudioRecorder(this, lifecycleScope)
-        asrNmtClient = AsrNmtClient(BhashiniConfigManager())
+        asrNmtClient = AsrNmtClient()
 
         setContent {
             var isHighContrast by remember { mutableStateOf(false) }

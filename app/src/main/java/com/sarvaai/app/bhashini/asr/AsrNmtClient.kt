@@ -1,9 +1,10 @@
 package com.sarvaai.app.bhashini.asr
 
-import android.util.Base64
 import android.util.Log
-import com.sarvaai.app.bhashini.auth.BhashiniConfigManager
-import com.sarvaai.app.bhashini.models.InferenceResponse
+import com.sarvaai.app.BuildConfig
+import com.sarvaai.app.bhashini.models.AnuvaadHubAsrResponse
+import com.sarvaai.app.bhashini.models.AnuvaadHubMtRequest
+import com.sarvaai.app.bhashini.models.AnuvaadHubMtResponse
 import com.sarvaai.app.bhashini.models.IngestionResult
 import com.sarvaai.app.core.network.OkHttpFactory
 import com.sarvaai.app.core.result.Result
@@ -11,17 +12,32 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class AsrNmtClient(
-    private val configManager: BhashiniConfigManager = BhashiniConfigManager(),
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true }
 ) {
     companion object {
         private const val TAG = "AsrNmtClient"
+
+        // Master JWT Access Token for AnuvaadHub Sandbox
+        const val DEFAULT_ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNmFjYTM2MmE2YWQ0MDM3OTU1Y2Q4YmVhIiwicm9sZSI6Im1lZ2F0aG9uX3N0dWRlbnQiLCJleHAiOjE3OTE4NjU4MDB9.MvE-w5j4jErD7lHlYpd8ibEe8F4Dj4HJHNLtGtkXR2k"
+
+        // Dedicated AnuvaadHub Model Endpoints
+        private val ASR_ENDPOINTS = mapOf(
+            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603533", // AI4Bharat-ASR-Hindi
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e60353b", // AI4Bharat-ASR-Telugu
+            "en" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603531"  // AI4Bharat-ASR-English
+        )
+
+        private val MT_TO_EN_ENDPOINTS = mapOf(
+            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316384a", // IIITH-Bhashaverse-Hindi-English
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb923163869"  // IIITH-Bhashaverse-Telugu-English
+        )
     }
 
     suspend fun transcribeAndTranslate(
@@ -29,119 +45,98 @@ class AsrNmtClient(
         sourceLanguage: String
     ): Result<IngestionResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
-        val base64Audio = Base64.encodeToString(wavBytes, Base64.NO_WRAP)
+        val lang = sourceLanguage.lowercase()
 
-        var config = configManager.getValidConfig()
-        val asrServiceId = config.serviceIds["asr_$sourceLanguage"] ?: config.serviceIds["asr_hi"] ?: "ai4bharat/conformer-multilingual-indo-aryan-asr"
+        // 1. Resolve ASR Endpoint
+        val asrUrl = ASR_ENDPOINTS[lang] ?: ASR_ENDPOINTS["hi"]!!
+        val token = if (BuildConfig.BHASHINI_INFERENCE_KEY.isNotEmpty()) BuildConfig.BHASHINI_INFERENCE_KEY else DEFAULT_ACCESS_TOKEN
 
-        val isEnglish = sourceLanguage.equals("en", ignoreCase = true)
-        val nmtServiceId = if (!isEnglish) {
-            config.serviceIds["translation_${sourceLanguage}_en"] ?: "ai4bharat/indictrans-v2-all-gpu"
-        } else null
+        Log.i(TAG, "Initiating AnuvaadHub ASR [$lang] -> $asrUrl (WAV bytes: ${wavBytes.size})")
 
-        val pipelineTasksJson = if (!isEnglish && nmtServiceId != null) {
-            """
-            [
-              {
-                "taskType": "asr",
-                "config": {
-                  "language": { "sourceLanguage": "$sourceLanguage" },
-                  "serviceId": "$asrServiceId",
-                  "audioFormat": "wav",
-                  "samplingRate": 16000
-                }
-              },
-              {
-                "taskType": "translation",
-                "config": {
-                  "language": { "sourceLanguage": "$sourceLanguage", "targetLanguage": "en" },
-                  "serviceId": "$nmtServiceId"
-                }
-              }
-            ]
-            """.trimIndent()
-        } else {
-            """
-            [
-              {
-                "taskType": "asr",
-                "config": {
-                  "language": { "sourceLanguage": "$sourceLanguage" },
-                  "serviceId": "$asrServiceId",
-                  "audioFormat": "wav",
-                  "samplingRate": 16000
-                }
-              }
-            ]
-            """.trimIndent()
-        }
-
-        val payload = """
-        {
-          "pipelineTasks": $pipelineTasksJson,
-          "inputData": {
-            "audio": [
-              { "audioContent": "$base64Audio" }
-            ]
-          }
-        }
-        """.trimIndent()
-
-        val request = Request.Builder()
-            .url(config.callbackUrl)
-            .header(config.authHeaderName, config.authHeaderValue)
-            .post(payload.toRequestBody("application/json".toMediaType()))
+        // 2. Build Multipart ASR Request
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "audio_file",
+                "audio_${System.currentTimeMillis()}.wav",
+                wavBytes.toRequestBody("audio/wav".toMediaType())
+            )
             .build()
 
+        val asrRequest = Request.Builder()
+            .url(asrUrl)
+            .header("access-token", token)
+            .post(requestBody)
+            .build()
+
+        val transcript: String
         try {
-            var response = okHttpClient.newCall(request).execute()
-
-            // Handle token expiration / 401
-            if (response.code == 401 || response.code == 403) {
-                Log.w(TAG, "Inference token expired (HTTP ${response.code}). Refreshing pipeline config...")
-                config = configManager.getValidConfig(forceRefresh = true)
-                val retryRequest = request.newBuilder()
-                    .header(config.authHeaderName, config.authHeaderValue)
-                    .build()
-                response = okHttpClient.newCall(retryRequest).execute()
+            val asrResponse = okHttpClient.newCall(asrRequest).execute()
+            val asrBody = asrResponse.body?.string()
+            if (!asrResponse.isSuccessful || asrBody.isNullOrEmpty()) {
+                Log.e(TAG, "AnuvaadHub ASR error: HTTP ${asrResponse.code} - $asrBody")
+                return@withContext Result.Error("AnuvaadHub ASR failed: HTTP ${asrResponse.code}")
             }
 
-            val responseBody = response.body?.string()
-            if (!response.isSuccessful || responseBody.isNullOrEmpty()) {
-                Log.e(TAG, "Bhashini inference failed: HTTP ${response.code} body: $responseBody")
-                return@withContext Result.Error("Bhashini inference failed: HTTP ${response.code}")
-            }
+            val parsedAsr = json.decodeFromString<AnuvaadHubAsrResponse>(asrBody)
+            transcript = parsedAsr.data?.recognizedText?.trim() ?: ""
+            Log.i(TAG, "ASR Success: '$transcript'")
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during ASR request", e)
+            return@withContext Result.Error("ASR Connection Error: ${e.localizedMessage}", e)
+        }
 
-            val inferenceResponse = json.decodeFromString<InferenceResponse>(responseBody)
-            val asrTask = inferenceResponse.pipelineResponse.firstOrNull { it.taskType == "asr" }
-                ?: inferenceResponse.pipelineResponse.getOrNull(0)
-
-            val transcript = asrTask?.output?.firstOrNull()?.source ?: ""
-
-            val nmtTask = inferenceResponse.pipelineResponse.firstOrNull { it.taskType == "translation" }
-                ?: inferenceResponse.pipelineResponse.getOrNull(1)
-
-            val translation = if (isEnglish) {
-                transcript
-            } else {
-                nmtTask?.output?.firstOrNull()?.target ?: transcript
-            }
-
-            val latency = System.currentTimeMillis() - startTime
-            Log.i(TAG, "Ingestion Success [$sourceLanguage] (${latency}ms) -> Transcript: '$transcript' | Translation: '$translation'")
-
-            Result.Success(
+        if (transcript.isEmpty()) {
+            return@withContext Result.Success(
                 IngestionResult(
-                    originalTranscript = transcript,
-                    englishTranslation = translation,
-                    sourceLanguage = sourceLanguage,
-                    latencyMs = latency,
-                    confidence = if (transcript.isNotEmpty()) 0.95 else 0.0
+                    originalTranscript = "",
+                    englishTranslation = "",
+                    sourceLanguage = lang,
+                    latencyMs = System.currentTimeMillis() - startTime
                 )
             )
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception during ASR+NMT processing", e)
-            Result.Error(e.localizedMessage ?: "Network or inference failure", e)
         }
+
+        // 3. Translation to English (if language is not English)
+        var englishTranslation = transcript
+        if (lang != "en") {
+            val mtUrl = MT_TO_EN_ENDPOINTS[lang]
+            if (mtUrl != null) {
+                try {
+                    val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = transcript))
+                    val mtRequest = Request.Builder()
+                        .url(mtUrl)
+                        .header("access-token", token)
+                        .post(mtPayload.toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val mtResponse = okHttpClient.newCall(mtRequest).execute()
+                    val mtBody = mtResponse.body?.string()
+                    if (mtResponse.isSuccessful && !mtBody.isNullOrEmpty()) {
+                        val parsedMt = json.decodeFromString<AnuvaadHubMtResponse>(mtBody)
+                        val translatedText = parsedMt.data?.outputText?.trim()
+                        if (!translatedText.isNullOrEmpty()) {
+                            englishTranslation = translatedText
+                        }
+                    } else {
+                        Log.w(TAG, "MT warning: HTTP ${mtResponse.code} - $mtBody")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "MT request failed, falling back to original transcript", e)
+                }
+            }
+        }
+
+        val totalLatency = System.currentTimeMillis() - startTime
+        Log.i(TAG, "Ingestion Complete in ${totalLatency}ms: Native='$transcript' | English='$englishTranslation'")
+
+        Result.Success(
+            IngestionResult(
+                originalTranscript = transcript,
+                englishTranslation = englishTranslation,
+                sourceLanguage = lang,
+                latencyMs = totalLatency
+            )
+        )
     }
 }
