@@ -1,10 +1,13 @@
 # PHASE 13: RESILIENT OFFLINE FALLBACKS, DEGRADED MODE & PRE-BUNDLED ASSETS
+
 ## Detailed Engineering Specification & Physical Execution Protocol
 
 ---
 
 ### 1. Phase Overview & Strategic Intent
+
 Phase 13 establishes bulletproof reliability and graceful failure handling (Rubric Weight: 10% + Bonus):
+
 1. Build the **Network Monitor** tracking active network states via Android 16 `ConnectivityManager` callbacks.
 2. Implement the **Circuit Breaker** with exponential backoff and jitter to protect against API failure cascades.
 3. Bundle 24 pre-synthesized Bhashini TTS WAV audio files in `assets/audio/` across English, Hindi, and Telugu, enabling 100% offline functionality for core flows.
@@ -93,6 +96,7 @@ class CircuitBreaker(
 ### 3. Pre-Bundled Static Audio Assets (`app/src/main/assets/audio/`)
 
 Pre-generated Bhashini audio clips stored directly in APK assets:
+
 ```
 assets/audio/
 ├── en/
@@ -174,6 +178,7 @@ class OfflineFallbackManager(
 ### 5. Physical Testing Protocol on realme P3 Pro (Android 16)
 
 #### 5.1 Airplane Mode Resilience Drill
+
 1. Turn on Airplane Mode on realme P3 Pro.
 2. Launch SarvaAI:
    - App detects offline status via `NetworkMonitor`.
@@ -190,6 +195,7 @@ class OfflineFallbackManager(
 ---
 
 ### 6. Git Checkpoint & Remote Push
+
 ```bash
 git add .
 git commit -m "feat(phase13): implement network monitor, circuit breaker, pre-bundled bhashini audio assets, system tts fallback, and offline degraded mode"
@@ -199,8 +205,9 @@ git push origin main
 ---
 
 ### 7. Exit Criteria Checklist
-- [x] Network state monitored accurately on Android 16.
-- [x] Pre-bundled audio plays with 0ms latency in 100% Airplane Mode.
-- [x] Core journey (welcome, camera coaching, order, bill, UPI) functional offline.
-- [x] Circuit breaker prevents app freezes during network drops.
-- [x] Code pushed to remote repository.
+
+- [X] Network state monitored accurately on Android 16.
+- [X] Pre-bundled audio plays with 0ms latency in 100% Airplane Mode.
+- [X] Core journey (welcome, camera coaching, order, bill, UPI) functional offline.
+- [X] Circuit breaker prevents app freezes during network drops.
+- [X] Code pushed to remote repository.
