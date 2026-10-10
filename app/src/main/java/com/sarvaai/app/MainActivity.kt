@@ -67,7 +67,7 @@ import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
 import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
-import com.sarvaai.app.ui.screens.dietary.DietaryAllergenExplanationScreen
+import com.sarvaai.app.ui.screens.waiter.WaiterBridgeScreen
 import java.util.UUID
 
 enum class AppScreen {
@@ -75,7 +75,7 @@ enum class AppScreen {
     CAMERA_CAPTURE,
     MENU_BROWSER,
     VOICE_CART,
-    DIETARY_EXPLAIN,
+    WAITER_BRIDGE,
     RAW_VS_ACCESSIBLE
 }
 
@@ -298,18 +298,20 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    AppScreen.DIETARY_EXPLAIN -> {
-                        DietaryAllergenExplanationScreen(
-                            menuDao = database.menuDao(),
+                    AppScreen.WAITER_BRIDGE -> {
+                        WaiterBridgeScreen(
+                            asrNmtClient = asrNmtClient,
                             groqClient = groqClient,
                             audioRecorder = audioRecorder,
-                            asrNmtClient = asrNmtClient,
                             hapticEngine = hapticEngine,
                             earconEngine = earconEngine,
-                            selectedLanguage = selectedLanguage,
+                            initialDinerLanguage = selectedLanguage,
+                            initialStaffLanguage = if (selectedLanguage == "hi") "te" else "hi",
                             isAudioPlaying = isAudioPlaying,
-                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
-                            onStopNarration = { stopSpeech() },
+                            onSpeakAudio = { textToSpeak, langToSpeak ->
+                                playSpeech(textToSpeak, langToSpeak)
+                            },
+                            onStopAudio = { stopSpeech() },
                             onClose = {
                                 stopSpeech()
                                 currentScreen = AppScreen.PLAYGROUND
@@ -571,12 +573,12 @@ fun MainAudioPlaygroundScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AccessibleButton(
-                    text = "🛡️ Dietary & Allergens (P8)",
+                    text = "🧑‍🍳 Waiter Bridge (P10)",
                     onClick = {
                         hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.DIETARY_EXPLAIN)
+                        onOpenScreen(AppScreen.WAITER_BRIDGE)
                     },
-                    modifier = Modifier.weight(1.3f),
+                    modifier = Modifier.weight(1f),
                     isPrimary = true
                 )
 
