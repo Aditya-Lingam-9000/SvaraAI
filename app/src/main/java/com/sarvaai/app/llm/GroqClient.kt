@@ -1,7 +1,9 @@
 package com.sarvaai.app.llm
 
+import android.content.Context
 import android.util.Log
 import com.sarvaai.app.BuildConfig
+import com.sarvaai.app.core.config.ApiKeyManager
 import com.sarvaai.app.core.network.OkHttpFactory
 import com.sarvaai.app.core.result.Result
 import com.sarvaai.app.llm.models.StructuredAiResponse
@@ -46,6 +48,7 @@ private data class GroqChoice(
 )
 
 class GroqClient(
+    private val context: Context? = null,
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 ) {
@@ -84,7 +87,7 @@ Given the customer's transcribed speech and their language:
         userLanguage: String,
         menuContext: String = ""
     ): Result<StructuredAiResponse> = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GROQ_API_KEY.trim()
+        val apiKey = if (context != null) ApiKeyManager.getGroqApiKey(context) else BuildConfig.GROQ_API_KEY.trim()
         val lang = userLanguage.lowercase()
 
         if (apiKey.isEmpty() || apiKey.startsWith("gsk_your")) {

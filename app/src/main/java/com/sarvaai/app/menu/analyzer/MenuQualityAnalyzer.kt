@@ -15,7 +15,8 @@ enum class CoachingCue {
     MOVE_UP,
     MOVE_DOWN,
     MOVE_LEFT,
-    MOVE_RIGHT
+    MOVE_RIGHT,
+    SEARCHING_MENU
 }
 
 class MenuQualityAnalyzer(
@@ -27,6 +28,24 @@ class MenuQualityAnalyzer(
     private var stableFrameCount = 0
     private var lastCueTimeMs = 0L
     private var isProcessingMlKit = false
+
+    private val keyboardNoiseTokens = listOf(
+        "ctrl", "shift", "caps", "tab", "esc", "enter", "delete", "f1", "f2", "f3", "f4", "f5",
+        "f6", "f7", "f8", "f9", "f10", "f11", "f12", "fn", "alt", "option", "command", "backspace",
+        "prtscn", "insert", "home", "end", "pgup", "pgdn", "windows", "qwer", "asdf", "zxcv"
+    )
+
+    private val foodKeywords = listOf(
+        "menu", "dosa", "idli", "curry", "paneer", "chicken", "biryani", "rice", "roti", "naan", "dal",
+        "sambar", "coffee", "tea", "chai", "tiffin", "thali", "veg", "starter", "soup", "dessert",
+        "beverage", "salad", "gravy", "fry", "masala", "tikka", "kebab", "bhaji", "pav", "paratha",
+        "lassi", "juice", "sweet", "chutney", "vada", "poori", "chapati", "noodle", "manchurian",
+        "pizza", "burger", "sandwich", "pasta", "food", "combo", "breakfast", "lunch", "dinner",
+        "items", "special", "rate", "price",
+        "మెనూ", "దోశ", "ఇడ్లీ", "కూర", "రైస్", "బిర్యానీ", "భోజనం", "కాఫీ", "టీ", "సాంబార్",
+        "చట్నీ", "పనీర్", "చికెన్", "స్వీట్", "వాటర్", "ఆర్డర్", "బిల్లు", "ధర", "రూపాయలు", "ప్లేట్",
+        "मेनू", "डोसा", "इडली", "पनीर", "चावल", "बिरयानी", "रोटी", "सब्ज़ी", "दाल", "चाय", "कॉफ़ी", "सांभर", "मिठाई", "थाली"
+    )
 
     @androidx.annotation.OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
@@ -76,9 +95,24 @@ class MenuQualityAnalyzer(
         textRecognizer.process(inputImage)
             .addOnSuccessListener { visionText ->
                 val blocks = visionText.textBlocks
-                if (blocks.isEmpty()) {
-                    // No text detected yet - do not emit random cues
+                val allText = visionText.text.lowercase()
+
+                if (blocks.isEmpty() || allText.length < 5) {
                     stableFrameCount = 0
+                    return@addOnSuccessListener
+                }
+
+                // Check for keyboard / non-menu noise
+                val keyboardMatchCount = keyboardNoiseTokens.count { allText.contains(it) }
+                val foodMatchCount = foodKeywords.count { allText.contains(it) }
+                val priceMatches = Regex("(?:₹|rs|inr|/\\-)\\s*\\d+|\\b\\d{2,4}\\s*(?:/\\-|\\.00)?\\b").findAll(allText).count()
+
+                val isConfidentMenu = (foodMatchCount >= 1 || priceMatches >= 2) && (keyboardMatchCount < 2)
+
+                if (!isConfidentMenu) {
+                    // Not a menu (e.g. keyboard, browser tab, random room clutter)
+                    stableFrameCount = 0
+                    emitCue(CoachingCue.SEARCHING_MENU)
                     return@addOnSuccessListener
                 }
 

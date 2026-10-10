@@ -1,5 +1,6 @@
 package com.sarvaai.app.menu.extractor
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -9,7 +10,7 @@ import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.sarvaai.app.BuildConfig
+import com.sarvaai.app.core.config.ApiKeyManager
 import com.sarvaai.app.core.network.OkHttpFactory
 import com.sarvaai.app.core.result.Result
 import com.sarvaai.app.data.dao.MenuDao
@@ -42,6 +43,7 @@ data class ParsedMenuResult(
 )
 
 class MenuExtractor(
+    private val context: Context,
     private val menuDao: MenuDao,
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
@@ -52,24 +54,35 @@ class MenuExtractor(
     }
 
     suspend fun extractAndPersistMenu(jpegBytes: ByteArray): Result<ParsedMenuResult> = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GROQ_API_KEY.trim()
+        val apiKey = ApiKeyManager.getGroqApiKey(context)
 
         var extractedDto: ExtractedMenuDto? = null
 
-        // 1. Try Groq LLaMA 3.2 Vision if API key is present
-        if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your") && jpegBytes.isNotEmpty()) {
-            extractedDto = extractWithGroqVision(jpegBytes, apiKey)
-        }
-
-        // 2. Fallback to Local ML Kit OCR if Groq Vision is not configured or fails
-        if (extractedDto == null) {
-            Log.i(TAG, "Using Local ML Kit OCR Engine for menu extraction")
-            extractedDto = extractWithLocalOcr(jpegBytes)
-        }
-
-        // 3. Fallback to rich South Indian & North Indian starter menu if image has zero readable text
-        if (extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+        if (jpegBytes.isEmpty()) {
+            // Explicitly requested sample menu loader
             extractedDto = getRealisticFallbackMenu()
+        } else {
+            // 1. Try Groq LLaMA 3.2 Vision if API key is present
+            if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your")) {
+                extractedDto = extractWithGroqVision(jpegBytes, apiKey)
+            }
+
+            // 2. Fallback to Local ML Kit OCR
+            if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+                Log.i(TAG, "Using Local ML Kit OCR Engine for menu extraction")
+                extractedDto = extractWithLocalOcr(jpegBytes)
+            }
+
+            // 3. If STILL no food items found in the photo, return error
+            if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+                return@withContext Result.Error(
+                    when (context.resources.configuration.locales[0].language) {
+                        "te" -> "ఫోటోలో రెస్టారెంట్ మెనూ కనిపించలేదు. దయచేసి ఆహార మెనూ కార్డ్‌ను స్పష్టంగా చూపించండి."
+                        "hi" -> "तस्वीर में रेस्टोरेंट मेनू नहीं मिला। कृपया खाने का मेनू कार्ड स्पष्ट रूप से दिखाएं।"
+                        else -> "No food menu detected in the photo. Please point camera directly at a restaurant menu card."
+                    }
+                )
+            }
         }
 
         // 4. Map DTO to Room Database Entities
@@ -311,7 +324,29 @@ class MenuExtractor(
 
                     var restaurantNameCandidate = "Restaurant Menu"
 
+                    val keyboardNoiseTokens = listOf(
+                        "ctrl", "shift", "caps", "tab", "esc", "enter", "delete", "f1", "f2", "f3", "f4", "f5",
+                        "f6", "f7", "f8", "f9", "f10", "f11", "f12", "fn", "alt", "option", "command", "backspace",
+                        "prtscn", "insert", "home", "end", "pgup", "pgdn", "windows", "intel", "amd", "lenovo", "dell",
+                        "asus", "hp", "acer", "apple", "macbook", "keyboard", "touchpad", "chrome", "firefox", "http"
+                    )
+
+                    val culinaryKeywords = listOf(
+                        "dosa", "idli", "curry", "paneer", "chicken", "biryani", "rice", "roti", "naan", "dal",
+                        "sambar", "coffee", "tea", "chai", "tiffin", "thali", "veg", "starter", "soup", "dessert",
+                        "beverage", "salad", "gravy", "fry", "masala", "tikka", "kebab", "bhaji", "pav", "paratha",
+                        "lassi", "juice", "sweet", "chutney", "vada", "poori", "chapati", "noodle", "manchurian",
+                        "pizza", "burger", "sandwich", "pasta", "special", "combo", "thali", "plate",
+                        "దోశ", "ఇడ్లీ", "కూర", "రైస్", "బిర్యానీ", "భోజనం", "కాఫీ", "టీ", "సాంబార్", "చట్నీ", "పనీర్", "చికెన్",
+                        "डोसा", "इडली", "पनीर", "चावल", "बिरयानी", "रोटी", "सब्ज़ी", "दाल", "चाय", "कॉफ़ी", "सांभर"
+                    )
+
                     for ((index, line) in sortedLines.withIndex()) {
+                        val lower = line.lowercase()
+                        if (keyboardNoiseTokens.any { lower.contains(it) } || lower.length < 2) {
+                            continue
+                        }
+
                         if (index == 0 && line.length in 3..40 && !line.any { it.isDigit() }) {
                             restaurantNameCandidate = line
                         }
@@ -324,7 +359,7 @@ class MenuExtractor(
                                 .replace(Regex("\\s+"), " ")
                                 .trim()
 
-                            if (dishName.length >= 2 && dishName.any { it.isLetter() }) {
+                            if (dishName.length >= 2 && dishName.any { it.isLetter() } && !keyboardNoiseTokens.any { dishName.lowercase().contains(it) }) {
                                 val isNonVeg = dishName.contains("chicken", ignoreCase = true) ||
                                         dishName.contains("mutton", ignoreCase = true) ||
                                         dishName.contains("egg", ignoreCase = true) ||
@@ -357,8 +392,8 @@ class MenuExtractor(
                                     currentItems = mutableListOf()
                                 }
                                 currentSectionName = line
-                            } else if (line.length in 3..35 && line.any { it.isLetter() } && !line.any { it.isDigit() }) {
-                                // Line without explicit price (e.g. dish name on separate line)
+                            } else if (culinaryKeywords.any { lower.contains(it) } && line.length in 3..35 && line.any { it.isLetter() } && !line.any { it.isDigit() }) {
+                                // Food item line without explicit price
                                 val isNonVeg = line.contains("chicken", ignoreCase = true) ||
                                         line.contains("mutton", ignoreCase = true) ||
                                         line.contains("egg", ignoreCase = true) ||
@@ -386,11 +421,11 @@ class MenuExtractor(
                     if (sections.isNotEmpty() && sections.any { it.items.isNotEmpty() }) {
                         continuation.resume(ExtractedMenuDto(restaurantNameCandidate, sections))
                     } else {
-                        continuation.resume(getRealisticFallbackMenu())
+                        continuation.resume(ExtractedMenuDto("", emptyList()))
                     }
                 }
                 .addOnFailureListener {
-                    continuation.resume(getRealisticFallbackMenu())
+                    continuation.resume(ExtractedMenuDto("", emptyList()))
                 }
         }
     }

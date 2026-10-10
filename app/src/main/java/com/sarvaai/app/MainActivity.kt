@@ -54,6 +54,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+import androidx.compose.ui.platform.LocalContext
+import com.sarvaai.app.core.config.ApiKeyManager
 import com.sarvaai.app.data.entities.MenuItemEntity
 import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.llm.GroqClient
@@ -104,8 +106,8 @@ class MainActivity : ComponentActivity() {
         asrNmtClient = AsrNmtClient()
         ttsClient = BhashiniTtsClient(this)
         speechPlayer = SpeechPlayer(this)
-        groqClient = GroqClient()
-        menuExtractor = MenuExtractor(database.menuDao())
+        groqClient = GroqClient(this)
+        menuExtractor = MenuExtractor(this, database.menuDao())
 
         setContent {
             var isHighContrast by remember { mutableStateOf(false) }
@@ -867,6 +869,32 @@ fun MainAudioPlaygroundScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            val context = LocalContext.current
+            var showApiKeyDialog by remember { mutableStateOf(false) }
+            var groqKeyInput by remember { mutableStateOf(ApiKeyManager.getGroqApiKey(context)) }
+            val hasValidKey = ApiKeyManager.hasValidGroqKey(context)
+
+            // Active AI Engine Status Badge
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (hasValidKey) VegGreen.copy(alpha = 0.15f) else SaffronPrimary.copy(alpha = 0.15f))
+                    .border(1.dp, if (hasValidKey) VegGreen else SaffronPrimary, RoundedCornerShape(8.dp))
+                    .padding(vertical = 8.dp, horizontal = 12.dp)
+            ) {
+                Text(
+                    text = if (hasValidKey) "⚡ Groq LLaMA 3.2 Vision & 70B Cloud Engine Active" else "📱 On-Device High-Speed Neural OCR Engine Active",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (hasValidKey) VegGreen else SaffronPrimary,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Accessibility Controls
             AccessibleButton(
                 text = if (isHighContrast) "Standard Dark Mode" else "High Contrast Mode",
@@ -876,6 +904,65 @@ fun MainAudioPlaygroundScreen(
                 },
                 isPrimary = false
             )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            AccessibleButton(
+                text = "🔑 Configure Groq Cloud API Key",
+                onClick = {
+                    hapticEngine.trigger(HapticPattern.CLICK)
+                    showApiKeyDialog = true
+                },
+                isPrimary = false
+            )
+
+            if (showApiKeyDialog) {
+                AlertDialog(
+                    onDismissRequest = { showApiKeyDialog = false },
+                    title = {
+                        Text(
+                            text = "Groq Cloud API Key",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SaffronPrimary
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Enter your Groq API Key (from console.groq.com) for LLaMA 3.2 Vision and LLaMA 3.3 70B reasoning. If left blank, the app will seamlessly run on-device local neural OCR.",
+                                fontSize = 13.sp,
+                                color = PureWhite
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = groqKeyInput,
+                                onValueChange = { groqKeyInput = it },
+                                label = { Text("gsk_...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                ApiKeyManager.setGroqApiKey(context, groqKeyInput)
+                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                showApiKeyDialog = false
+                            }
+                        ) {
+                            Text("Save Key", fontWeight = FontWeight.Bold, color = SaffronPrimary)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showApiKeyDialog = false }) {
+                            Text("Cancel", color = SubtitleText)
+                        }
+                    },
+                    containerColor = CharcoalSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
         }

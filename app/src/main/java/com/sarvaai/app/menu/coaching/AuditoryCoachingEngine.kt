@@ -15,6 +15,7 @@ object AuditoryCoachingEngine {
                 CoachingCue.MOVE_DOWN -> "క్రింది భాగం కట్ అవుతోంది, ఫోన్‌ను క్రిందికి జరపండి."
                 CoachingCue.MOVE_LEFT -> "ఫోన్‌ను ఎడమ వైపు జరపండి."
                 CoachingCue.MOVE_RIGHT -> "ఫోన్‌ను కుడి వైపు జరపండి."
+                CoachingCue.SEARCHING_MENU -> "రెస్టారెంట్ మెనూ కార్డ్‌ను కెమెరా ముందు ఉంచండి."
             }
 
             "hi" -> when (cue) {
@@ -26,6 +27,7 @@ object AuditoryCoachingEngine {
                 CoachingCue.MOVE_DOWN -> "नीचे का हिस्सा कट रहा है, फोन नीचे करें।"
                 CoachingCue.MOVE_LEFT -> "फोन बाईं ओर ले जाएं।"
                 CoachingCue.MOVE_RIGHT -> "फोन दाईं ओर ले जाएं।"
+                CoachingCue.SEARCHING_MENU -> "कृपया रेस्टोरेंट मेनू कार्ड को कैमरे के सामने रखें।"
             }
 
             else -> when (cue) {
@@ -37,6 +39,7 @@ object AuditoryCoachingEngine {
                 CoachingCue.MOVE_DOWN -> "Menu cut off at bottom, move phone down."
                 CoachingCue.MOVE_LEFT -> "Move phone left."
                 CoachingCue.MOVE_RIGHT -> "Move phone right."
+                CoachingCue.SEARCHING_MENU -> "Position camera over restaurant menu card."
             }
         }
     }
