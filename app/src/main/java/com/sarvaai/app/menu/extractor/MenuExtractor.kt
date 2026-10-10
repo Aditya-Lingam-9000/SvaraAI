@@ -74,7 +74,7 @@ class MenuExtractor(
             }
 
             // 3. If STILL no food items found in the photo, return error
-            if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+            if (extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
                 return@withContext Result.Error(
                     when (context.resources.configuration.locales[0].language) {
                         "te" -> "ఫోటోలో రెస్టారెంట్ మెనూ కనిపించలేదు. దయచేసి ఆహార మెనూ కార్డ్‌ను స్పష్టంగా చూపించండి."
@@ -188,22 +188,25 @@ class MenuExtractor(
             val dataUri = "data:image/jpeg;base64,$base64Image"
 
             val systemPrompt = """
-            You are an expert menu extraction assistant for Indian restaurants.
-            Extract all restaurant menu items, categories/sections, and prices visible in the image.
-            Format as JSON:
+            You are an expert universal restaurant menu parser.
+            Analyze the image. If the image is NOT a restaurant menu (e.g. keyboard, computer screen, wall, person, document without food/beverages), return strictly: {"restaurantName": "", "sections": []}.
+            If the image IS a restaurant food or drinks menu card, extract all sections, items, prices in whole rupees, descriptions, and dietary attributes.
+            Return valid JSON strictly matching:
             {
               "restaurantName": "Restaurant Name",
               "sections": [
                 {
-                  "sectionName": "Tiffins & Dosas",
+                  "sectionName": "Section Name",
                   "items": [
                     {
-                      "name": "Masala Dosa",
-                      "price": 90,
+                      "name": "Dish Name",
+                      "price": 120,
                       "isVegetarian": true,
                       "isJain": false,
+                      "isVegan": false,
+                      "isNutFree": true,
                       "spiceLevel": 1,
-                      "description": "Crispy crepe with potato filling"
+                      "description": "Description"
                     }
                   ]
                 }
@@ -213,7 +216,7 @@ class MenuExtractor(
 
             val payload = """
             {
-              "model": "llama-3.2-11b-vision-preview",
+              "model": "qwen/qwen3.8-27b",
               "messages": [
                 {
                   "role": "user",
@@ -232,6 +235,7 @@ class MenuExtractor(
                 .url(GROQ_VISION_URL)
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
+                .header("User-Agent", "SarvaAI/1.0")
                 .post(payload.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -251,8 +255,39 @@ class MenuExtractor(
 
                 if (cleanJson.isNotBlank()) {
                     val parsedDto = json.decodeFromString<ExtractedMenuDto>(cleanJson)
-                    if (parsedDto.sections.isNotEmpty() && parsedDto.sections.any { it.items.isNotEmpty() }) {
-                        return parsedDto
+                    val validSections = parsedDto.sections.mapNotNull { sec ->
+                        val validItems = sec.items.mapNotNull { item ->
+                            if (item.name.isBlank() || item.name.length < 2) null
+                            else {
+                                val isNonVeg = item.name.contains("chicken", ignoreCase = true) ||
+                                        item.name.contains("mutton", ignoreCase = true) ||
+                                        item.name.contains("egg", ignoreCase = true) ||
+                                        item.name.contains("fish", ignoreCase = true) ||
+                                        item.name.contains("prawn", ignoreCase = true) ||
+                                        item.name.contains("lamb", ignoreCase = true) ||
+                                        item.name.contains("pork", ignoreCase = true) ||
+                                        item.name.contains("beef", ignoreCase = true) ||
+                                        item.name.contains("seafood", ignoreCase = true)
+
+                                val isVeg = if (isNonVeg) false else item.isVegetarian
+                                val isJain = isVeg && !item.name.contains("onion", ignoreCase = true) && !item.name.contains("garlic", ignoreCase = true) && !item.name.contains("potato", ignoreCase = true) && !item.name.contains("aloo", ignoreCase = true)
+                                val spice = if (item.name.contains("spicy", ignoreCase = true) || item.name.contains("chilli", ignoreCase = true) || item.name.contains("masala", ignoreCase = true) || item.name.contains("schezwan", ignoreCase = true)) maxOf(item.spiceLevel, 2) else item.spiceLevel
+                                item.copy(
+                                    name = item.name.trim(),
+                                    price = if (item.price > 0) item.price else 120L,
+                                    isVegetarian = isVeg,
+                                    isJain = isJain,
+                                    spiceLevel = spice
+                                )
+                            }
+                        }
+                        if (validItems.isNotEmpty()) sec.copy(items = validItems) else null
+                    }
+                    if (validSections.isNotEmpty()) {
+                        return parsedDto.copy(
+                            restaurantName = parsedDto.restaurantName.ifBlank { "Restaurant Menu" },
+                            sections = validSections
+                        )
                     }
                 }
             } else {

@@ -19,7 +19,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 @Serializable
 private data class GroqChatRequest(
-    val model: String = "llama-3.3-70b-versatile",
+    val model: String = "openai/gpt-oss-20b",
     val messages: List<GroqMessage>,
     val temperature: Double = 0.1,
     val max_tokens: Int = 1024,
@@ -109,6 +109,7 @@ Given the customer's transcribed speech and their language:
                 .url(GROQ_API_URL)
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
+                .header("User-Agent", "SarvaAI/1.0")
                 .post(requestJson.toRequestBody("application/json".toMediaType()))
                 .build()
 

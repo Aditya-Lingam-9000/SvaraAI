@@ -32,7 +32,9 @@ class MenuQualityAnalyzer(
     private val keyboardNoiseTokens = listOf(
         "ctrl", "shift", "caps", "tab", "esc", "enter", "delete", "f1", "f2", "f3", "f4", "f5",
         "f6", "f7", "f8", "f9", "f10", "f11", "f12", "fn", "alt", "option", "command", "backspace",
-        "prtscn", "insert", "home", "end", "pgup", "pgdn", "windows", "qwer", "asdf", "zxcv"
+        "prtscn", "insert", "home", "end", "pgup", "pgdn", "windows", "qwer", "asdf", "zxcv",
+        "lenovo", "dell", "hp", "asus", "acer", "apple", "macbook", "intel", "amd", "touchpad",
+        "keyboard", "chrome", "firefox", "http", "www", "github", "vscode", "terminal"
     )
 
     private val foodKeywords = listOf(
@@ -132,12 +134,21 @@ class MenuQualityAnalyzer(
 
                 val centerX = (minLeft + maxRight) / 2.0f / frameWidth
                 val centerY = (minTop + maxBottom) / 2.0f / frameHeight
+                val boxWidthRatio = (maxRight - minLeft).toFloat() / frameWidth
+                val boxHeightRatio = (maxBottom - minTop).toFloat() / frameHeight
+
+                // Check boundary clipping and centering
+                val isCutOffTop = minTop < frameHeight * 0.06f
+                val isCutOffBottom = maxBottom > frameHeight * 0.94f
+                val isCutOffLeft = minLeft < frameWidth * 0.06f
+                val isCutOffRight = maxRight > frameWidth * 0.94f
 
                 val cue: CoachingCue = when {
-                    centerX < 0.20f -> CoachingCue.MOVE_RIGHT
-                    centerX > 0.80f -> CoachingCue.MOVE_LEFT
-                    centerY < 0.20f -> CoachingCue.MOVE_DOWN
-                    centerY > 0.80f -> CoachingCue.MOVE_UP
+                    isCutOffTop || centerY < 0.32f -> CoachingCue.MOVE_UP
+                    isCutOffBottom || centerY > 0.68f -> CoachingCue.MOVE_DOWN
+                    isCutOffLeft || centerX < 0.32f -> CoachingCue.MOVE_LEFT
+                    isCutOffRight || centerX > 0.68f -> CoachingCue.MOVE_RIGHT
+                    boxWidthRatio < 0.25f && boxHeightRatio < 0.15f -> CoachingCue.SEARCHING_MENU
                     else -> CoachingCue.PERFECT_ALIGNMENT
                 }
 
@@ -145,7 +156,7 @@ class MenuQualityAnalyzer(
 
                 if (cue == CoachingCue.PERFECT_ALIGNMENT) {
                     stableFrameCount++
-                    if (stableFrameCount >= 8) { // Stable for ~1.0 sec
+                    if (stableFrameCount >= 6) { // Stable for ~0.8-1.0 sec
                         onStabilityConfirmed()
                         stableFrameCount = 0
                     }

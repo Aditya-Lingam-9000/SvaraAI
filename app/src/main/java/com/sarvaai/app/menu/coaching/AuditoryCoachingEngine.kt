@@ -13,8 +13,8 @@ object AuditoryCoachingEngine {
                 CoachingCue.BLURRY_HOLD_STEADY -> "ఫోన్‌ను కదల్చకుండా స్థిరంగా ఉంచండి."
                 CoachingCue.MOVE_UP -> "పై భాగం కట్ అవుతోంది, ఫోన్‌ను పైకి జరపండి."
                 CoachingCue.MOVE_DOWN -> "క్రింది భాగం కట్ అవుతోంది, ఫోన్‌ను క్రిందికి జరపండి."
-                CoachingCue.MOVE_LEFT -> "ఫోన్‌ను ఎడమ వైపు జరపండి."
-                CoachingCue.MOVE_RIGHT -> "ఫోన్‌ను కుడి వైపు జరపండి."
+                CoachingCue.MOVE_LEFT -> "ఎడమ భాగం కట్ అవుతోంది, ఫోన్‌ను ఎడమ వైపు జరపండి."
+                CoachingCue.MOVE_RIGHT -> "కుడి భాగం కట్ అవుతోంది, ఫోన్‌ను కుడి వైపు జరపండి."
                 CoachingCue.SEARCHING_MENU -> "రెస్టారెంట్ మెనూ కార్డ్‌ను కెమెరా ముందు ఉంచండి."
             }
 
@@ -25,8 +25,8 @@ object AuditoryCoachingEngine {
                 CoachingCue.BLURRY_HOLD_STEADY -> "धुंधला है, फोन को स्थिर रखें।"
                 CoachingCue.MOVE_UP -> "ऊपर का हिस्सा कट रहा है, फोन ऊपर करें।"
                 CoachingCue.MOVE_DOWN -> "नीचे का हिस्सा कट रहा है, फोन नीचे करें।"
-                CoachingCue.MOVE_LEFT -> "फोन बाईं ओर ले जाएं।"
-                CoachingCue.MOVE_RIGHT -> "फोन दाईं ओर ले जाएं।"
+                CoachingCue.MOVE_LEFT -> "बाईं ओर कट रहा है, फोन बाईं तरफ करें।"
+                CoachingCue.MOVE_RIGHT -> "दाईं ओर कट रहा है, फोन दाईं तरफ करें।"
                 CoachingCue.SEARCHING_MENU -> "कृपया रेस्टोरेंट मेनू कार्ड को कैमरे के सामने रखें।"
             }
 
@@ -37,8 +37,8 @@ object AuditoryCoachingEngine {
                 CoachingCue.BLURRY_HOLD_STEADY -> "Image is blurry, please hold steady."
                 CoachingCue.MOVE_UP -> "Menu cut off at top, move phone up."
                 CoachingCue.MOVE_DOWN -> "Menu cut off at bottom, move phone down."
-                CoachingCue.MOVE_LEFT -> "Move phone left."
-                CoachingCue.MOVE_RIGHT -> "Move phone right."
+                CoachingCue.MOVE_LEFT -> "Menu cut off on left, move phone left."
+                CoachingCue.MOVE_RIGHT -> "Menu cut off on right, move phone right."
                 CoachingCue.SEARCHING_MENU -> "Position camera over restaurant menu card."
             }
         }
