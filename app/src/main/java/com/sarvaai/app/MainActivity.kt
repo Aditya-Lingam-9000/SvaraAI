@@ -158,7 +158,7 @@ fun MainAudioPlaygroundScreen(
 
     // Calculate highlighted word index based on playback progress
     val words = remember(currentSpokenCaption) {
-        if (currentSpokenCaption.isBlank()) emptyList() else currentSpokenCaption.split(" ")
+        if (currentSpokenCaption.isBlank()) emptyList() else currentSpokenCaption.split(" ").filter { it.isNotBlank() }
     }
     val highlightedWordIndex = remember(currentPositionMs, totalDurationMs, words) {
         if (words.isEmpty() || totalDurationMs <= 0 || !isAudioPlaying) {
@@ -179,6 +179,11 @@ fun MainAudioPlaygroundScreen(
     }
 
     fun playSampleText(textToSynthesize: String, targetLang: String) {
+        val cleanText = textToSynthesize.trim()
+        if (cleanText.isBlank() || !cleanText.any { it.isLetterOrDigit() }) {
+            return
+        }
+
         scope.launch {
             if (isRecording) {
                 audioRecorder.stopRecording()
@@ -189,10 +194,17 @@ fun MainAudioPlaygroundScreen(
             currentSpokenCaption = "Synthesizing audio..."
 
             // Sentence Chunking for Low-Latency TTFA
-            val chunks = SentenceChunker.splitIntoChunks(textToSynthesize)
+            val chunks = SentenceChunker.splitIntoChunks(cleanText)
+            if (chunks.isEmpty()) {
+                isProcessing = false
+                currentSpokenCaption = ""
+                return@launch
+            }
+
             val fullSpokenBuilder = StringBuilder()
 
             for ((index, chunk) in chunks.withIndex()) {
+                if (chunk.isBlank() || !chunk.any { it.isLetterOrDigit() }) continue
                 val res = ttsClient.synthesizeSpeech(chunk, targetLang)
                 when (res) {
                     is Result.Success -> {
@@ -388,8 +400,9 @@ fun MainAudioPlaygroundScreen(
                                                 errorMessage = null
 
                                                 // Step 2: Synthesize AI Response in target language & Stream Playback
-                                                val englishResponse = if (res.data.originalTranscript.isNotBlank()) {
-                                                    "I understood your request for ${res.data.englishTranslation}. Adding it to your order."
+                                                val englishResponse = if (res.data.originalTranscript.isNotBlank() && res.data.originalTranscript.any { it.isLetterOrDigit() }) {
+                                                    val recognizedItem = if (res.data.englishTranslation.isNotBlank()) res.data.englishTranslation else res.data.originalTranscript
+                                                    "I understood your request for $recognizedItem. Adding it to your order."
                                                 } else {
                                                     "I could not hear any speech clearly. Please try speaking again."
                                                 }

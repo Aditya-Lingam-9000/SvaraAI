@@ -7,11 +7,19 @@ object SentenceChunker {
     /**
      * Splits input text into discrete sentence chunks suitable for rapid streaming TTS synthesis.
      * Keeps chunk length below [maxChars] (default 160 characters) to optimize Time-To-First-Audio (TTFA).
+     * Ensures every chunk contains speakable characters to prevent API 422 errors.
      */
     fun splitIntoChunks(text: String, maxChars: Int = 160): List<String> {
         if (text.isBlank()) return emptyList()
 
-        val rawSentences = text.split(SENTENCE_SPLIT_REGEX).map { it.trim() }.filter { it.isNotEmpty() }
+        val rawSentences = text.split(SENTENCE_SPLIT_REGEX)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.any { c -> c.isLetterOrDigit() } }
+
+        if (rawSentences.isEmpty()) {
+            return if (text.any { it.isLetterOrDigit() }) listOf(text.trim()) else emptyList()
+        }
+
         val chunks = mutableListOf<String>()
         var currentChunk = StringBuilder()
 
@@ -39,12 +47,15 @@ object SentenceChunker {
             chunks.add(currentChunk.toString().trim())
         }
 
-        return chunks.filter { it.isNotBlank() }
+        return chunks.filter { it.isNotBlank() && it.any { c -> c.isLetterOrDigit() } }
     }
 
     private fun splitLongSentence(sentence: String, maxChars: Int): List<String> {
         // Attempt clause split on commas/semicolons first
         val clauses = sentence.split(Regex("(?<=[,;،])\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.any { c -> c.isLetterOrDigit() } }
+
         if (clauses.size > 1) {
             val clauseChunks = mutableListOf<String>()
             var clauseBuilder = StringBuilder()
@@ -76,7 +87,7 @@ object SentenceChunker {
     }
 
     private fun splitByWords(text: String, maxChars: Int): List<String> {
-        val words = text.split(Regex("\\s+"))
+        val words = text.split(Regex("\\s+")).filter { it.isNotBlank() }
         val result = mutableListOf<String>()
         var current = StringBuilder()
 
@@ -86,11 +97,13 @@ object SentenceChunker {
             } else if (current.length + word.length + 1 <= maxChars) {
                 current.append(" ").append(word)
             } else {
-                result.add(current.toString().trim())
+                if (current.isNotEmpty() && current.any { it.isLetterOrDigit() }) {
+                    result.add(current.toString().trim())
+                }
                 current = StringBuilder(word)
             }
         }
-        if (current.isNotEmpty()) {
+        if (current.isNotEmpty() && current.any { it.isLetterOrDigit() }) {
             result.add(current.toString().trim())
         }
         return result
