@@ -2,6 +2,9 @@ package com.sarvaai.app.ui.screens.camera
 
 import android.Manifest
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,17 +42,14 @@ import com.sarvaai.app.audio.earcons.EarconEngine
 import com.sarvaai.app.audio.earcons.EarconType
 import com.sarvaai.app.audio.haptics.HapticFeedbackEngine
 import com.sarvaai.app.audio.haptics.HapticPattern
-import com.sarvaai.app.menu.analyzer.CoachingCue
-import com.sarvaai.app.menu.analyzer.MenuQualityAnalyzer
-import com.sarvaai.app.menu.coaching.AuditoryCoachingEngine
 import com.sarvaai.app.menu.extractor.MenuExtractor
 import com.sarvaai.app.menu.extractor.ParsedMenuResult
 import com.sarvaai.app.ui.components.AccessibleButton
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.Executors
 
 @Composable
@@ -81,10 +81,9 @@ fun CameraXMenuCaptureScreen(
     }
 
     var hasCameraPermission by remember { mutableStateOf(false) }
-    var currentCue by remember { mutableStateOf<CoachingCue?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
     var isProcessingVision by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("Position camera over restaurant menu") }
+    var statusText by remember { mutableStateOf("Point camera at restaurant menu and tap Capture") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     var imageCaptureUseCase by remember { mutableStateOf<ImageCapture?>(null) }
@@ -104,52 +103,108 @@ fun CameraXMenuCaptureScreen(
         permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
+    fun processCapturedBytes(bytes: ByteArray) {
+        scope.launch(Dispatchers.Main) {
+            isCapturing = false
+            isProcessingVision = true
+            errorMessage = null
+            statusText = "AI Vision is extracting menu categories, dishes and prices..."
+            hapticEngine.trigger(HapticPattern.CONFIRMATION)
+            onSpeakAnnouncement(
+                when (selectedLanguage) {
+                    "te" -> "మెనూ ఫోటో విశ్లేషిస్తున్నాము. దయచేసి వేచి ఉండండి..."
+                    "hi" -> "मेनू का विश्लेषण किया जा रहा है। कृपया प्रतीक्षा करें..."
+                    else -> "Analyzing menu photo with AI Vision. Please wait..."
+                }
+            )
+
+            val res = menuExtractor.extractAndPersistMenu(bytes)
+            isProcessingVision = false
+            when (res) {
+                is com.sarvaai.app.core.result.Result.Success -> {
+                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                    earconEngine.play(EarconType.ORDER_CONFIRMED)
+                    val sectionCount = res.data.sections.size
+                    val itemCount = res.data.items.size
+                    onSpeakAnnouncement(
+                        when (selectedLanguage) {
+                            "te" -> "మెనూ విజయవంతంగా లోడ్ అయింది. $sectionCount విభాగాలు మరియు $itemCount వంటకాలు గుర్తించబడ్డాయి."
+                            "hi" -> "मेनू सफलतापूर्वक लोड हुआ। $sectionCount श्रेणियां और $itemCount व्यंजन मिले।"
+                            else -> "Menu loaded successfully with $sectionCount categories and $itemCount dishes."
+                        }
+                    )
+                    onMenuExtracted(res.data)
+                }
+                is com.sarvaai.app.core.result.Result.Error -> {
+                    errorMessage = res.message
+                    statusText = res.message
+                    hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                    earconEngine.play(EarconType.ERROR_ALERT)
+                    onSpeakAnnouncement(res.message)
+                }
+                else -> {}
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            processCapturedBytes(bytes)
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            errorMessage = "Could not read selected photo file."
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        errorMessage = "Failed to load image: ${e.message}"
+                    }
+                }
+            }
+        }
+    }
+
     fun capturePhoto() {
         val capture = imageCaptureUseCase ?: return
         if (isCapturing || isProcessingVision) return
 
         isCapturing = true
+        errorMessage = null
         hapticEngine.trigger(HapticPattern.CAMERA_STABLE)
         earconEngine.play(EarconType.LISTEN_STOP)
-        statusText = "Capturing menu photo..."
+        statusText = "Capturing photo..."
 
+        val tempFile = File(context.cacheDir, "menu_capture_${System.currentTimeMillis()}.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
         val executor = Executors.newSingleThreadExecutor()
+
         capture.takePicture(
+            outputOptions,
             executor,
-            object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(imageProxy: ImageProxy) {
-                    val buffer = imageProxy.planes[0].buffer
-                    val bytes = ByteArray(buffer.remaining())
-                    buffer.get(bytes)
-                    imageProxy.close()
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val bytes = try {
+                        val fileBytes = tempFile.readBytes()
+                        tempFile.delete()
+                        fileBytes
+                    } catch (e: Exception) {
+                        ByteArray(0)
+                    }
 
-                    scope.launch(Dispatchers.Main) {
-                        isCapturing = false
-                        isProcessingVision = true
-                        statusText = "Extracting menu sections and dishes with AI Vision..."
-                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                        onSpeakAnnouncement(
-                            when (selectedLanguage) {
-                                "te" -> "మెనూ ఫోటో తీయబడింది. వంటకాలను గుర్తిస్తున్నాము..."
-                                "hi" -> "मेनू की तस्वीर ले ली गई है। विवरण पढ़ा जा रहा है..."
-                                else -> "Photo captured. Extracting menu with AI Vision..."
-                            }
-                        )
-
-                        val res = menuExtractor.extractAndPersistMenu(bytes)
-                        isProcessingVision = false
-                        when (res) {
-                            is com.sarvaai.app.core.result.Result.Success -> {
-                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                                earconEngine.play(EarconType.ORDER_CONFIRMED)
-                                onMenuExtracted(res.data)
-                            }
-                            is com.sarvaai.app.core.result.Result.Error -> {
-                                errorMessage = res.message
-                                hapticEngine.trigger(HapticPattern.ERROR_ALERT)
-                                earconEngine.play(EarconType.ERROR_ALERT)
-                            }
-                            else -> {}
+                    if (bytes.isNotEmpty()) {
+                        processCapturedBytes(bytes)
+                    } else {
+                        scope.launch(Dispatchers.Main) {
+                            isCapturing = false
+                            errorMessage = "Failed to read captured photo."
                         }
                     }
                 }
@@ -191,30 +246,9 @@ fun CameraXMenuCaptureScreen(
                             }
 
                             val capture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                                 .build()
                             imageCaptureUseCase = capture
-
-                            val qualityAnalyzer = MenuQualityAnalyzer(
-                                onCoachingFeedback = { cue ->
-                                    currentCue = cue
-                                    val prompt = AuditoryCoachingEngine.getSpokenPrompt(cue, selectedLanguage)
-                                    statusText = prompt
-                                    onSpeakAnnouncement(prompt)
-                                    if (cue == CoachingCue.PERFECT_ALIGNMENT) {
-                                        hapticEngine.trigger(HapticPattern.CAMERA_STABLE)
-                                    }
-                                },
-                                onStabilityConfirmed = {
-                                    capturePhoto()
-                                }
-                            )
-
-                            val analysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build().also {
-                                    it.setAnalyzer(Executors.newSingleThreadExecutor(), qualityAnalyzer)
-                                }
 
                             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -224,11 +258,10 @@ fun CameraXMenuCaptureScreen(
                                     lifecycleOwner,
                                     cameraSelector,
                                     preview,
-                                    capture,
-                                    analysis
+                                    capture
                                 )
                             } catch (e: Exception) {
-                                Log.e("CameraXScreen", "Use case binding failed", e)
+                                Log.e("CameraXScreen", "Camera binding failed", e)
                             }
                         }, ContextCompat.getMainExecutor(ctx))
 
@@ -241,19 +274,55 @@ fun CameraXMenuCaptureScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(32.dp),
+                        .padding(horizontal = 24.dp, vertical = 80.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxHeight(0.75f)
+                            .fillMaxHeight(0.70f)
                             .border(
                                 width = 3.dp,
-                                color = if (currentCue == CoachingCue.PERFECT_ALIGNMENT) VegGreen else SaffronPrimary,
+                                color = SaffronPrimary,
                                 shape = RoundedCornerShape(16.dp)
                             )
                     )
+                }
+            }
+
+            // Processing Vision Full Screen Overlay
+            if (isProcessingVision) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = SaffronPrimary,
+                            strokeWidth = 4.dp,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = "Extracting Menu with AI Vision",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PureWhite,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Categorizing dishes, prices, and dietary information accurately...",
+                            fontSize = 14.sp,
+                            color = SubtitleText,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
 
@@ -272,7 +341,7 @@ fun CameraXMenuCaptureScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Blind-Accessible Menu Capture",
+                        text = "Menu Capture (Phase 5)",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = SaffronPrimary,
@@ -294,9 +363,9 @@ fun CameraXMenuCaptureScreen(
 
                 Text(
                     text = statusText,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (currentCue == CoachingCue.PERFECT_ALIGNMENT) VegGreen else HighContrastYellow,
+                    color = HighContrastYellow,
                     textAlign = TextAlign.Start
                 )
             }
@@ -306,8 +375,8 @@ fun CameraXMenuCaptureScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(Color.Black.copy(alpha = 0.85f))
-                    .padding(horizontal = 20.dp, vertical = 20.dp)
+                    .background(Color.Black.copy(alpha = 0.90f))
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
                     .systemBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -317,6 +386,7 @@ fun CameraXMenuCaptureScreen(
                         fontSize = 13.sp,
                         color = NonVegRed,
                         fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
                 }
@@ -326,7 +396,7 @@ fun CameraXMenuCaptureScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Manual Capture Button (Accessible 64dp+ tap target)
+                    // Manual Capture Button (72dp circular accessible tap target)
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -338,32 +408,36 @@ fun CameraXMenuCaptureScreen(
                                 capturePhoto()
                             }
                             .semantics {
-                                contentDescription = "Capture Menu Photo manually"
+                                contentDescription = "Capture Menu Photo"
                             }
                     ) {
-                        if (isProcessingVision) {
+                        if (isCapturing || isProcessingVision) {
                             CircularProgressIndicator(color = SaffronPrimary, modifier = Modifier.size(32.dp))
                         } else {
-                            Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, tint = SaffronOnPrimary, modifier = Modifier.size(36.dp))
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = SaffronOnPrimary,
+                                modifier = Modifier.size(36.dp)
+                            )
                         }
                     }
 
+                    // Gallery Upload Button
+                    AccessibleButton(
+                        text = "📁 Upload Photo",
+                        onClick = {
+                            galleryLauncher.launch("image/*")
+                        },
+                        modifier = Modifier.weight(1f),
+                        isPrimary = false
+                    )
+
                     // Load Sample Restaurant Menu Button (for instant testing)
                     AccessibleButton(
-                        text = "Load Sample Grand Menu",
+                        text = "⚡ Sample Menu",
                         onClick = {
-                            scope.launch {
-                                isProcessingVision = true
-                                statusText = "Loading sample restaurant menu into Room DB..."
-                                onSpeakAnnouncement("Loading sample restaurant menu...")
-                                val sampleRes = menuExtractor.extractAndPersistMenu(ByteArray(0))
-                                isProcessingVision = false
-                                if (sampleRes is com.sarvaai.app.core.result.Result.Success) {
-                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                                    earconEngine.play(EarconType.ORDER_CONFIRMED)
-                                    onMenuExtracted(sampleRes.data)
-                                }
-                            }
+                            processCapturedBytes(ByteArray(0))
                         },
                         modifier = Modifier.weight(1f),
                         isPrimary = false

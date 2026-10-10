@@ -171,8 +171,8 @@ class MenuExtractor(
                 originalBitmap
             }
 
-            // Downscale to max 1024 to keep payload compact and fast
-            val maxDim = 1024
+            // Downscale to max 1800 to preserve crisp text and category headers
+            val maxDim = 1800
             val maxSide = maxOf(rotatedBitmap.width, rotatedBitmap.height)
             val scale = if (maxSide > maxDim) maxDim.toFloat() / maxSide else 1.0f
             val scaledBitmap = if (scale < 1.0f) {
@@ -182,21 +182,35 @@ class MenuExtractor(
             }
 
             val stream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
             val compressedBytes = stream.toByteArray()
             val base64Image = Base64.encodeToString(compressedBytes, Base64.NO_WRAP)
             val dataUri = "data:image/jpeg;base64,$base64Image"
 
             val systemPrompt = """
-            You are an expert universal restaurant menu parser.
-            Analyze the image. If the image is NOT a restaurant menu (e.g. keyboard, computer screen, wall, person, document without food/beverages), return strictly: {"restaurantName": "", "sections": []}.
-            If the image IS a restaurant food or drinks menu card, extract all sections, items, prices in whole rupees, descriptions, and dietary attributes.
-            Return valid JSON strictly matching:
+            You are an expert restaurant menu transcription and classification assistant.
+            Read the provided image of a restaurant menu card very carefully.
+            Extract:
+            1. "restaurantName": The name of the restaurant if visible on the menu (e.g. "Sarva Bhavan", "Paradise Biryani", or "Restaurant Menu").
+            2. "sections": Group every dish into its exact printed category/heading name (e.g. "Tiffins", "Starters", "Main Course", "Breads", "Biryani & Rice", "Beverages", "Desserts", "Chinese", "South Indian", etc.).
+            3. "items": For each dish/drink in that category, extract:
+               - "name": The exact item name as printed on the menu card.
+               - "price": The exact numerical price in whole rupees (INR) (e.g., if "₹180/-" or "180", price is 180).
+               - "isVegetarian": Boolean (true if vegetarian/beverage, false if chicken/mutton/fish/egg/meat).
+               - "isJain": Boolean (true if vegetarian and no onion/garlic/root vegetables).
+               - "isVegan": Boolean (true if purely plant-based without dairy/paneer/ghee).
+               - "isNutFree": Boolean (true if no cashew/peanuts/nuts).
+               - "spiceLevel": 0 (Mild/Sweet), 1 (Medium), 2 (Spicy), 3 (Very Spicy).
+               - "description": Short description or ingredients if mentioned.
+
+            If the image is NOT a restaurant menu (e.g., keyboard, wall, person, document with no food), return strictly: {"restaurantName": "", "sections": []}.
+
+            Output MUST strictly be valid JSON matching this schema:
             {
               "restaurantName": "Restaurant Name",
               "sections": [
                 {
-                  "sectionName": "Section Name",
+                  "sectionName": "Exact Category Heading",
                   "items": [
                     {
                       "name": "Dish Name",
