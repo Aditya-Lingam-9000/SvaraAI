@@ -118,7 +118,7 @@ fun CameraXMenuCaptureScreen(
                 }
             )
 
-            val res = menuExtractor.extractAndPersistMenu(bytes)
+            val res = menuExtractor.extractAndPersistMenu(bytes, selectedLanguage)
             isProcessingVision = false
             when (res) {
                 is com.sarvaai.app.core.result.Result.Success -> {

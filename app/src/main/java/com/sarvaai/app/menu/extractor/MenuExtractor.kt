@@ -1,15 +1,8 @@
 package com.sarvaai.app.menu.extractor
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.ExifInterface
-import android.util.Base64
 import android.util.Log
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.sarvaai.app.bhashini.ocr.BhashiniOcrClient
 import com.sarvaai.app.core.config.ApiKeyManager
 import com.sarvaai.app.core.network.OkHttpFactory
 import com.sarvaai.app.core.result.Result
@@ -20,8 +13,10 @@ import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.menu.models.ExtractedItemDto
 import com.sarvaai.app.menu.models.ExtractedMenuDto
 import com.sarvaai.app.menu.models.ExtractedSectionDto
+import com.sarvaai.app.menu.preprocessing.ImageNormalizer
+import com.sarvaai.app.menu.spatial.LocalSpatialOcr
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -31,10 +26,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.util.UUID
-import kotlin.coroutines.resume
 
 data class ParsedMenuResult(
     val menu: MenuEntity,
@@ -46,68 +38,105 @@ class MenuExtractor(
     private val context: Context,
     private val menuDao: MenuDao,
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
+    private val bhashiniOcrClient: BhashiniOcrClient = BhashiniOcrClient(okHttpClient),
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 ) {
     companion object {
         private const val TAG = "MenuExtractor"
-        private const val GROQ_VISION_URL = "https://api.groq.com/openai/v1/chat/completions"
+        private const val GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+        private const val PRIMARY_LLM_MODEL = "qwen/qwen3.8-27b"
+        private const val SECONDARY_LLM_MODEL = "openai/gpt-oss-120b"
+        private const val TERTIARY_LLM_MODEL = "openai/gpt-oss-20b"
     }
 
-    suspend fun extractAndPersistMenu(jpegBytes: ByteArray): Result<ParsedMenuResult> = withContext(Dispatchers.IO) {
+    /**
+     * Extracts structured menu from raw camera JPEG bytes and persists into Room Database.
+     */
+    suspend fun extractAndPersistMenu(
+        rawJpegBytes: ByteArray,
+        languageCode: String = "en"
+    ): Result<ParsedMenuResult> = withContext(Dispatchers.IO) {
         val apiKey = ApiKeyManager.getGroqApiKey(context)
 
         var extractedDto: ExtractedMenuDto? = null
 
-        if (jpegBytes.isEmpty()) {
-            // Explicitly requested sample menu loader
+        if (rawJpegBytes.isEmpty()) {
             extractedDto = getRealisticFallbackMenu()
         } else {
-            // STAGE 1: High-Accuracy Verbatim OCR Extraction
-            val rawOcrText = performRawOcr(jpegBytes)
-            Log.i(TAG, "Stage 1 OCR extracted ${rawOcrText.lines().size} raw lines: ${rawOcrText.take(150)}...")
+            // STEP 1: Pre-process Image (Orientation, Scaling to 1600px, Contrast Enhancement)
+            val normalizedJpeg = ImageNormalizer.normalizeForOcr(rawJpegBytes)
+            Log.i(TAG, "Image normalized for OCR: ${normalizedJpeg.size} bytes")
 
-            // STAGE 2: If API key present and OCR found text, structure with high-speed LLM Reasoner
-            if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your") && rawOcrText.length >= 15) {
-                extractedDto = structureOcrWithLlm(rawOcrText, apiKey)
-                if (extractedDto != null && extractedDto.sections.isNotEmpty()) {
-                    Log.i(TAG, "Stage 2 LLM structuring successful: ${extractedDto.sections.size} sections, ${extractedDto.sections.sumOf { it.items.size }} items")
+            // STEP 2: Dual-Engine Parallel OCR (Bhashini Sandbox OCR + Local Spatial Layout OCR)
+            val bhashiniDeferred = async {
+                bhashiniOcrClient.recognizeText(normalizedJpeg, languageCode)
+            }
+            val spatialDeferred = async {
+                LocalSpatialOcr.extractSpatialText(normalizedJpeg)
+            }
+
+            val bhashiniRes = bhashiniDeferred.await()
+            val spatialOcrText = spatialDeferred.await()
+
+            val bhashiniText = if (bhashiniRes is Result.Success) bhashiniRes.data.trim() else ""
+            Log.i(TAG, "OCR Completed - Bhashini: ${bhashiniText.length} chars, Spatial: ${spatialOcrText.length} chars")
+
+            // Fused OCR Text prioritizing structured column layout
+            val fusedOcrText = when {
+                spatialOcrText.isNotBlank() && bhashiniText.isNotBlank() ->
+                    "--- SPATIAL COLUMN-ALIGNED OCR ---\n$spatialOcrText\n\n--- BHASHINI RAW TEXT ---\n$bhashiniText"
+                spatialOcrText.isNotBlank() -> spatialOcrText
+                bhashiniText.isNotBlank() -> bhashiniText
+                else -> ""
+            }
+
+            // STEP 3: High-Capacity LLM Structuring & Categorization
+            if (apiKey.isNotBlank() && !apiKey.startsWith("gsk_your") && fusedOcrText.length >= 15) {
+                // Try Primary Model (qwen/qwen3.8-27b)
+                extractedDto = structureOcrWithLlm(fusedOcrText, apiKey, PRIMARY_LLM_MODEL)
+
+                // Fallback to Secondary Model if needed
+                if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+                    Log.i(TAG, "Retrying with Secondary LLM: $SECONDARY_LLM_MODEL")
+                    extractedDto = structureOcrWithLlm(fusedOcrText, apiKey, SECONDARY_LLM_MODEL)
+                }
+
+                if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+                    Log.i(TAG, "Retrying with Tertiary LLM: $TERTIARY_LLM_MODEL")
+                    extractedDto = structureOcrWithLlm(fusedOcrText, apiKey, TERTIARY_LLM_MODEL)
                 }
             }
 
-            // STAGE 3: If OCR text was sparse or LLM structuring missed, try Direct Multimodal Vision
+            // STEP 4: Deterministic Local Fallback Parser if offline or LLM failure
             if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
-                if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your")) {
-                    Log.i(TAG, "Trying Direct Multimodal Vision with qwen/qwen3.8-27b")
-                    extractedDto = extractWithGroqVision(jpegBytes, apiKey)
+                Log.i(TAG, "Using Local Deterministic Spatial Fallback Parser")
+                if (spatialOcrText.isNotBlank()) {
+                    extractedDto = LocalSpatialOcr.parseDeterministicFallback(spatialOcrText)
+                } else if (bhashiniText.isNotBlank()) {
+                    extractedDto = LocalSpatialOcr.parseDeterministicFallback(bhashiniText)
                 }
             }
 
-            // STAGE 4: Fallback to Local ML Kit Parser if offline/network error
+            // If STILL no food items found in the photo, return clear error
             if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
-                Log.i(TAG, "Using Local ML Kit OCR Engine fallback for menu extraction")
-                extractedDto = extractWithLocalOcr(jpegBytes)
-            }
-
-            // If STILL no food items found in the photo, return error
-            if (extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
                 return@withContext Result.Error(
                     when (context.resources.configuration.locales[0].language) {
-                        "te" -> "ఫోటోలో రెస్టారెంట్ మెనూ కనిపించలేదు. దయచేసి ఆహార మెనూ కార్డ్‌ను స్పష్టంగా చూపించండి."
-                        "hi" -> "तस्वीर में रेस्टोरेंट मेनू नहीं मिला। कृपया खाने का मेनू कार्ड स्पष्ट रूप से दिखाएं।"
-                        else -> "No food menu detected in the photo. Please point camera directly at a restaurant menu card."
+                        "te" -> "ఫోటోలో రెస్టారెంట్ మెనూ వివరాలు స్పష్టంగా కనిపించలేదు. దయచేసి మెనూ కార్డును నేరుగా మరియు వెలుతురులో చూపించి మళ్లీ స్కాన్ చేయండి."
+                        "hi" -> "तस्वीर में रेस्टोरेंट मेनू स्पष्ट रूप से नहीं मिला। कृपया मेनू कार्ड को अच्छी रोशनी में सीधा रखकर दोबारा स्कैन करें।"
+                        else -> "No food menu detected in the photo. Please place the restaurant menu card under good lighting and scan again."
                     }
                 )
             }
         }
 
-        // 4. Map DTO to Room Database Entities
+        // STEP 5: Map Structured DTO to Room Database Entities
         val menuId = "menu_${UUID.randomUUID().toString().take(8)}"
         val menuEntity = MenuEntity(
             menuId = menuId,
-            restaurantName = extractedDto.restaurantName.ifBlank { "Sarva Restaurant" },
+            restaurantName = extractedDto.restaurantName.ifBlank { "Sarva Bhavan Restaurant" },
             captureTimestamp = System.currentTimeMillis(),
             pageCount = 1,
-            rawOcrSummary = "Extracted ${extractedDto.sections.size} sections and ${extractedDto.sections.sumOf { it.items.size }} items"
+            rawOcrSummary = "Extracted ${extractedDto.sections.size} categories and ${extractedDto.sections.sumOf { it.items.size }} items"
         )
 
         val sectionEntities = mutableListOf<MenuSectionEntity>()
@@ -127,7 +156,7 @@ class MenuExtractor(
 
             for ((iIndex, itemDto) in secDto.items.withIndex()) {
                 val itemId = "item_${sectionId}_$iIndex"
-                val pricePaise = if (itemDto.price > 0) itemDto.price * 100L else 15000L
+                val pricePaise = if (itemDto.price > 0) itemDto.price * 100L else 12000L
                 itemEntities.add(
                     MenuItemEntity(
                         itemId = itemId,
@@ -148,7 +177,7 @@ class MenuExtractor(
             }
         }
 
-        // 5. Persist to Room
+        // STEP 6: Persist into Room SQLite Database
         menuDao.insertFullMenu(menuEntity, sectionEntities, itemEntities)
         Log.i(TAG, "Menu persisted successfully into Room: ${sectionEntities.size} sections, ${itemEntities.size} items")
 
@@ -161,91 +190,45 @@ class MenuExtractor(
         )
     }
 
-    private suspend fun performRawOcr(jpegBytes: ByteArray): String = suspendCancellableCoroutine { cont ->
-        if (jpegBytes.isEmpty()) {
-            cont.resume("")
-            return@suspendCancellableCoroutine
-        }
-
-        var rotationDegrees = 0
-        try {
-            val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
-            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-            rotationDegrees = when (orientation) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                else -> 0
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "EXIF rotation read failed: ${e.message}")
-        }
-
-        val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-        if (bitmap == null) {
-            cont.resume("")
-            return@suspendCancellableCoroutine
-        }
-
-        val image = InputImage.fromBitmap(bitmap, rotationDegrees)
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                val textBlocks = visionText.textBlocks
-                if (textBlocks.isEmpty()) {
-                    cont.resume("")
-                    return@addOnSuccessListener
-                }
-
-                val sortedLines = textBlocks.flatMap { it.lines }
-                    .sortedWith(compareBy({ it.boundingBox?.top ?: 0 }, { it.boundingBox?.left ?: 0 }))
-                    .map { it.text.trim() }
-                    .filter { it.isNotBlank() }
-
-                cont.resume(sortedLines.joinToString("\n"))
-            }
-            .addOnFailureListener {
-                cont.resume("")
-            }
-    }
-
-    private fun structureOcrWithLlm(rawOcrText: String, apiKey: String): ExtractedMenuDto? {
+    /**
+     * Calls Groq LLM with specialized structured menu transcription prompt.
+     */
+    private fun structureOcrWithLlm(rawOcrText: String, apiKey: String, modelName: String): ExtractedMenuDto? {
         return try {
             val systemPrompt = """
-            You are an expert restaurant menu transcription and classification assistant.
-            You are given verbatim OCR text extracted from a restaurant menu card.
-            Organize it accurately into structured JSON:
-            1. "restaurantName": The restaurant name if present in the text (otherwise "Restaurant Menu").
-            2. "sections": Group every item under its exact category heading/section as in the text (e.g. "Tiffins & Dosas", "Starters", "Main Course", "Rice & Biryani", "Beverages", "Desserts", "Chinese", etc.).
-            3. "items": For each dish/beverage, extract:
-               - "name": The exact item name as in the OCR text.
-               - "price": The exact numerical price in whole rupees (INR) associated with this item (e.g., if "₹90/-" or "90", price is 90; do NOT invent prices).
-               - "isVegetarian": Boolean (true if vegetarian/beverage, false if meat/chicken/fish/egg).
-               - "isJain": Boolean (true if vegetarian and no onion/garlic/potatoes).
-               - "isVegan": Boolean (true if plant-based without dairy/paneer/ghee).
+            You are an expert restaurant menu digitization engine.
+            You are provided with OCR text extracted from a physical restaurant menu card.
+            Your task is to organize it accurately into structured JSON:
+            1. "restaurantName": The restaurant name if present at the top of the menu (e.g. "Sarva Bhavan", "Paradise Biryani", or "Restaurant Menu").
+            2. "sections": Group every food and beverage item under its exact category heading/section as printed (e.g. "Tiffins & Breakfast", "Starters & Soups", "Main Course / Curries", "Breads & Naan", "Biryani & Rice", "Chinese Specials", "Beverages", "Desserts").
+            3. "items": For each dish, extract:
+               - "name": The exact item name from the text (e.g. "Masala Dosa", "Paneer Butter Masala", "Chicken Biryani").
+               - "price": The exact numerical price in whole currency units (e.g. ₹120 or $15 -> price: 120 or 15). If multiple portions are listed like Half/Full, extract the main standard portion price. Do NOT invent fake prices.
+               - "isVegetarian": Boolean (true for veg/beverage/dairy, false for chicken/mutton/egg/fish/prawn/meat).
+               - "isJain": Boolean (true if vegetarian without onion/garlic/potatoes/root vegetables).
+               - "isVegan": Boolean (true if plant-based without dairy/paneer/ghee/butter/milk/cheese/curd).
                - "isNutFree": Boolean (true if no cashew/peanuts).
-               - "spiceLevel": 0 (Mild), 1 (Medium), 2 (Spicy), 3 (Very Spicy).
+               - "spiceLevel": Integer from 0 (Mild) to 3 (Very Spicy).
                - "description": Short description or empty string.
 
-            If the text has no food menu items, return: {"restaurantName": "", "sections": []}.
+            If the text does not contain any food or drink items, return: {"restaurantName": "", "sections": []}.
 
             Return strictly valid JSON matching this schema:
             {
               "restaurantName": "Restaurant Name",
               "sections": [
                 {
-                  "sectionName": "Exact Section Heading",
+                  "sectionName": "Exact Category Heading",
                   "items": [
                     {
-                      "name": "Dish Name",
+                      "name": "Exact Dish Name",
                       "price": 120,
                       "isVegetarian": true,
                       "isJain": false,
                       "isVegan": false,
                       "isNutFree": true,
                       "spiceLevel": 1,
-                      "description": "Short description"
+                      "description": ""
                     }
                   ]
                 }
@@ -254,11 +237,11 @@ class MenuExtractor(
             """.trimIndent()
 
             val encodedSystemPrompt = json.encodeToString(kotlinx.serialization.serializer<String>(), systemPrompt)
-            val encodedUserContent = json.encodeToString(kotlinx.serialization.serializer<String>(), "Here is the raw OCR text from the menu:\n\n$rawOcrText")
+            val encodedUserContent = json.encodeToString(kotlinx.serialization.serializer<String>(), "Here is the menu OCR text:\n\n$rawOcrText")
 
             val payload = """
             {
-              "model": "openai/gpt-oss-20b",
+              "model": "$modelName",
               "messages": [
                 { "role": "system", "content": $encodedSystemPrompt },
                 { "role": "user", "content": $encodedUserContent }
@@ -269,7 +252,7 @@ class MenuExtractor(
             """.trimIndent()
 
             val request = Request.Builder()
-                .url(GROQ_VISION_URL)
+                .url(GROQ_CHAT_URL)
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "SarvaAI/1.0")
@@ -296,19 +279,27 @@ class MenuExtractor(
                         val validItems = sec.items.mapNotNull { item ->
                             if (item.name.isBlank() || item.name.length < 2) null
                             else {
-                                val isNonVeg = item.name.contains("chicken", ignoreCase = true) ||
-                                        item.name.contains("mutton", ignoreCase = true) ||
-                                        item.name.contains("egg", ignoreCase = true) ||
-                                        item.name.contains("fish", ignoreCase = true) ||
-                                        item.name.contains("prawn", ignoreCase = true) ||
-                                        item.name.contains("lamb", ignoreCase = true) ||
-                                        item.name.contains("pork", ignoreCase = true) ||
-                                        item.name.contains("beef", ignoreCase = true) ||
-                                        item.name.contains("seafood", ignoreCase = true)
+                                val isNonVeg = item.name.contains("chicken", true) ||
+                                        item.name.contains("mutton", true) ||
+                                        item.name.contains("egg", true) ||
+                                        item.name.contains("fish", true) ||
+                                        item.name.contains("prawn", true) ||
+                                        item.name.contains("lamb", true) ||
+                                        item.name.contains("pork", true) ||
+                                        item.name.contains("beef", true) ||
+                                        item.name.contains("seafood", true)
 
                                 val isVeg = if (isNonVeg) false else item.isVegetarian
-                                val isJain = isVeg && !item.name.contains("onion", ignoreCase = true) && !item.name.contains("garlic", ignoreCase = true) && !item.name.contains("potato", ignoreCase = true) && !item.name.contains("aloo", ignoreCase = true)
-                                val spice = if (item.name.contains("spicy", ignoreCase = true) || item.name.contains("chilli", ignoreCase = true) || item.name.contains("masala", ignoreCase = true) || item.name.contains("schezwan", ignoreCase = true)) maxOf(item.spiceLevel, 2) else item.spiceLevel
+                                val isJain = isVeg && !item.name.contains("onion", true) &&
+                                        !item.name.contains("garlic", true) &&
+                                        !item.name.contains("potato", true) &&
+                                        !item.name.contains("aloo", true)
+                                val spice = if (item.name.contains("spicy", true) ||
+                                    item.name.contains("chilli", true) ||
+                                    item.name.contains("masala", true) ||
+                                    item.name.contains("schezwan", true)
+                                ) maxOf(item.spiceLevel, 2) else item.spiceLevel
+
                                 item.copy(
                                     name = item.name.trim(),
                                     price = if (item.price > 0) item.price else 100L,
@@ -321,6 +312,7 @@ class MenuExtractor(
                         if (validItems.isNotEmpty()) sec.copy(items = validItems) else null
                     }
                     if (validSections.isNotEmpty()) {
+                        Log.i(TAG, "Successfully parsed with $modelName: ${validSections.size} sections, ${validSections.sumOf { it.items.size }} items")
                         return parsedDto.copy(
                             restaurantName = parsedDto.restaurantName.ifBlank { "Restaurant Menu" },
                             sections = validSections
@@ -328,378 +320,52 @@ class MenuExtractor(
                     }
                 }
             } else {
-                Log.w(TAG, "Groq LLM OCR Structuring HTTP ${response.code}: $body")
+                Log.w(TAG, "Groq LLM Menu Structuring with $modelName HTTP ${response.code}: $body")
             }
             null
         } catch (e: Exception) {
-            Log.w(TAG, "Groq LLM OCR Structuring exception: ${e.message}", e)
+            Log.w(TAG, "Groq LLM Structuring exception with $modelName: ${e.message}", e)
             null
-        }
-    }
-
-    private fun extractWithGroqVision(jpegBytes: ByteArray, apiKey: String): ExtractedMenuDto? {
-        return try {
-            val originalBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return null
-
-            var rotationDegrees = 0
-            try {
-                val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
-                val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-                rotationDegrees = when (orientation) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                    else -> 0
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "EXIF rotation error: ${e.message}")
-            }
-
-            val rotatedBitmap = if (rotationDegrees != 0) {
-                val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
-            } else {
-                originalBitmap
-            }
-
-            // Downscale to max 1800 to preserve crisp text and category headers
-            val maxDim = 1800
-            val maxSide = maxOf(rotatedBitmap.width, rotatedBitmap.height)
-            val scale = if (maxSide > maxDim) maxDim.toFloat() / maxSide else 1.0f
-            val scaledBitmap = if (scale < 1.0f) {
-                Bitmap.createScaledBitmap(rotatedBitmap, (rotatedBitmap.width * scale).toInt(), (rotatedBitmap.height * scale).toInt(), true)
-            } else {
-                rotatedBitmap
-            }
-
-            val stream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
-            val compressedBytes = stream.toByteArray()
-            val base64Image = Base64.encodeToString(compressedBytes, Base64.NO_WRAP)
-            val dataUri = "data:image/jpeg;base64,$base64Image"
-
-            val systemPrompt = """
-            You are an expert restaurant menu transcription and classification assistant.
-            Read the provided image of a restaurant menu card very carefully.
-            Extract:
-            1. "restaurantName": The name of the restaurant if visible on the menu (e.g. "Sarva Bhavan", "Paradise Biryani", or "Restaurant Menu").
-            2. "sections": Group every dish into its exact printed category/heading name (e.g. "Tiffins", "Starters", "Main Course", "Breads", "Biryani & Rice", "Beverages", "Desserts", "Chinese", "South Indian", etc.).
-            3. "items": For each dish/drink in that category, extract:
-               - "name": The exact item name as printed on the menu card.
-               - "price": The exact numerical price in whole rupees (INR) (e.g., if "₹180/-" or "180", price is 180).
-               - "isVegetarian": Boolean (true if vegetarian/beverage, false if chicken/mutton/fish/egg/meat).
-               - "isJain": Boolean (true if vegetarian and no onion/garlic/root vegetables).
-               - "isVegan": Boolean (true if purely plant-based without dairy/paneer/ghee).
-               - "isNutFree": Boolean (true if no cashew/peanuts/nuts).
-               - "spiceLevel": 0 (Mild/Sweet), 1 (Medium), 2 (Spicy), 3 (Very Spicy).
-               - "description": Short description or ingredients if mentioned.
-
-            If the image is NOT a restaurant menu (e.g., keyboard, wall, person, document with no food), return strictly: {"restaurantName": "", "sections": []}.
-
-            Output MUST strictly be valid JSON matching this schema:
-            {
-              "restaurantName": "Restaurant Name",
-              "sections": [
-                {
-                  "sectionName": "Exact Category Heading",
-                  "items": [
-                    {
-                      "name": "Dish Name",
-                      "price": 120,
-                      "isVegetarian": true,
-                      "isJain": false,
-                      "isVegan": false,
-                      "isNutFree": true,
-                      "spiceLevel": 1,
-                      "description": "Description"
-                    }
-                  ]
-                }
-              ]
-            }
-            """.trimIndent()
-
-            val payload = """
-            {
-              "model": "qwen/qwen3.8-27b",
-              "messages": [
-                {
-                  "role": "user",
-                  "content": [
-                    { "type": "text", "text": "$systemPrompt" },
-                    { "type": "image_url", "image_url": { "url": "$dataUri" } }
-                  ]
-                }
-              ],
-              "temperature": 0.1,
-              "response_format": { "type": "json_object" }
-            }
-            """.trimIndent()
-
-            val request = Request.Builder()
-                .url(GROQ_VISION_URL)
-                .header("Authorization", "Bearer $apiKey")
-                .header("Content-Type", "application/json")
-                .header("User-Agent", "SarvaAI/1.0")
-                .post(payload.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            val response = okHttpClient.newCall(request).execute()
-            val body = response.body?.string()
-
-            if (response.isSuccessful && !body.isNullOrEmpty()) {
-                val rootJson = json.parseToJsonElement(body).jsonObject
-                val rawContent = rootJson["choices"]?.jsonArray?.firstOrNull()?.jsonObject
-                    ?.get("message")?.jsonObject
-                    ?.get("content")?.jsonPrimitive?.content ?: ""
-
-                val cleanJson = rawContent
-                    .replace(Regex("^```(?:json)?", RegexOption.IGNORE_CASE), "")
-                    .replace(Regex("```$", RegexOption.IGNORE_CASE), "")
-                    .trim()
-
-                if (cleanJson.isNotBlank()) {
-                    val parsedDto = json.decodeFromString<ExtractedMenuDto>(cleanJson)
-                    val validSections = parsedDto.sections.mapNotNull { sec ->
-                        val validItems = sec.items.mapNotNull { item ->
-                            if (item.name.isBlank() || item.name.length < 2) null
-                            else {
-                                val isNonVeg = item.name.contains("chicken", ignoreCase = true) ||
-                                        item.name.contains("mutton", ignoreCase = true) ||
-                                        item.name.contains("egg", ignoreCase = true) ||
-                                        item.name.contains("fish", ignoreCase = true) ||
-                                        item.name.contains("prawn", ignoreCase = true) ||
-                                        item.name.contains("lamb", ignoreCase = true) ||
-                                        item.name.contains("pork", ignoreCase = true) ||
-                                        item.name.contains("beef", ignoreCase = true) ||
-                                        item.name.contains("seafood", ignoreCase = true)
-
-                                val isVeg = if (isNonVeg) false else item.isVegetarian
-                                val isJain = isVeg && !item.name.contains("onion", ignoreCase = true) && !item.name.contains("garlic", ignoreCase = true) && !item.name.contains("potato", ignoreCase = true) && !item.name.contains("aloo", ignoreCase = true)
-                                val spice = if (item.name.contains("spicy", ignoreCase = true) || item.name.contains("chilli", ignoreCase = true) || item.name.contains("masala", ignoreCase = true) || item.name.contains("schezwan", ignoreCase = true)) maxOf(item.spiceLevel, 2) else item.spiceLevel
-                                item.copy(
-                                    name = item.name.trim(),
-                                    price = if (item.price > 0) item.price else 120L,
-                                    isVegetarian = isVeg,
-                                    isJain = isJain,
-                                    spiceLevel = spice
-                                )
-                            }
-                        }
-                        if (validItems.isNotEmpty()) sec.copy(items = validItems) else null
-                    }
-                    if (validSections.isNotEmpty()) {
-                        return parsedDto.copy(
-                            restaurantName = parsedDto.restaurantName.ifBlank { "Restaurant Menu" },
-                            sections = validSections
-                        )
-                    }
-                }
-            } else {
-                Log.w(TAG, "Groq Vision HTTP ${response.code}: $body")
-            }
-            null
-        } catch (e: Exception) {
-            Log.w(TAG, "Groq Vision exception: ${e.message}", e)
-            null
-        }
-    }
-
-    private suspend fun extractWithLocalOcr(jpegBytes: ByteArray): ExtractedMenuDto {
-        return suspendCancellableCoroutine { continuation ->
-            if (jpegBytes.isEmpty()) {
-                continuation.resume(getRealisticFallbackMenu())
-                return@suspendCancellableCoroutine
-            }
-
-            var rotationDegrees = 0
-            try {
-                val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
-                val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-                rotationDegrees = when (orientation) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                    else -> 0
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "EXIF rotation read failed: ${e.message}")
-            }
-
-            val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-            if (bitmap == null) {
-                continuation.resume(getRealisticFallbackMenu())
-                return@suspendCancellableCoroutine
-            }
-
-            val image = InputImage.fromBitmap(bitmap, rotationDegrees)
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-            recognizer.process(image)
-                .addOnSuccessListener { visionText ->
-                    val textBlocks = visionText.textBlocks
-                    if (textBlocks.isEmpty()) {
-                        continuation.resume(getRealisticFallbackMenu())
-                        return@addOnSuccessListener
-                    }
-
-                    // Extract and sort all text lines by vertical position
-                    val sortedLines = textBlocks.flatMap { it.lines }
-                        .sortedWith(compareBy({ it.boundingBox?.top ?: 0 }, { it.boundingBox?.left ?: 0 }))
-                        .map { it.text.trim() }
-                        .filter { it.isNotBlank() }
-
-                    val sections = mutableListOf<ExtractedSectionDto>()
-                    var currentSectionName = "Menu Specialties"
-                    var currentItems = mutableListOf<ExtractedItemDto>()
-
-                    val priceRegex = Regex("(?:₹|Rs\\.?|INR|/-)?\\s*(\\d{2,4})(?:/-|\\.\\d{2})?")
-                    val knownHeaderKeywords = listOf(
-                        "STARTERS", "APPETIZERS", "TIFFIN", "DOSA", "CURRY", "CURRIES",
-                        "MAIN COURSE", "RICE", "BIRYANI", "BREADS", "ROTI", "NAAN",
-                        "BEVERAGES", "DRINKS", "HOT DRINKS", "DESSERTS", "SWEETS",
-                        "CHINESE", "SOUTH INDIAN", "NORTH INDIAN", "SPECIALS", "MENU",
-                        "టిఫిన్స్", "కూరలు", "రైస్", "డ్రింక్స్"
-                    )
-
-                    var restaurantNameCandidate = "Restaurant Menu"
-
-                    val keyboardNoiseTokens = listOf(
-                        "ctrl", "shift", "caps", "tab", "esc", "enter", "delete", "f1", "f2", "f3", "f4", "f5",
-                        "f6", "f7", "f8", "f9", "f10", "f11", "f12", "fn", "alt", "option", "command", "backspace",
-                        "prtscn", "insert", "home", "end", "pgup", "pgdn", "windows", "intel", "amd", "lenovo", "dell",
-                        "asus", "hp", "acer", "apple", "macbook", "keyboard", "touchpad", "chrome", "firefox", "http"
-                    )
-
-                    val culinaryKeywords = listOf(
-                        "dosa", "idli", "curry", "paneer", "chicken", "biryani", "rice", "roti", "naan", "dal",
-                        "sambar", "coffee", "tea", "chai", "tiffin", "thali", "veg", "starter", "soup", "dessert",
-                        "beverage", "salad", "gravy", "fry", "masala", "tikka", "kebab", "bhaji", "pav", "paratha",
-                        "lassi", "juice", "sweet", "chutney", "vada", "poori", "chapati", "noodle", "manchurian",
-                        "pizza", "burger", "sandwich", "pasta", "special", "combo", "thali", "plate",
-                        "దోశ", "ఇడ్లీ", "కూర", "రైస్", "బిర్యానీ", "భోజనం", "కాఫీ", "టీ", "సాంబార్", "చట్నీ", "పనీర్", "చికెన్",
-                        "डोसा", "इडली", "पनीर", "चावल", "बिरयानी", "रोटी", "सब्ज़ी", "दाल", "चाय", "कॉफ़ी", "सांभर"
-                    )
-
-                    for ((index, line) in sortedLines.withIndex()) {
-                        val lower = line.lowercase()
-                        if (keyboardNoiseTokens.any { lower.contains(it) } || lower.length < 2) {
-                            continue
-                        }
-
-                        if (index == 0 && line.length in 3..40 && !line.any { it.isDigit() }) {
-                            restaurantNameCandidate = line
-                        }
-
-                        val priceMatch = priceRegex.find(line)
-                        if (priceMatch != null) {
-                            val price = priceMatch.groupValues[1].toLongOrNull() ?: 120L
-                            val dishName = line.replace(priceMatch.value, "")
-                                .replace(Regex("[-–—.:*•|]"), " ")
-                                .replace(Regex("\\s+"), " ")
-                                .trim()
-
-                            if (dishName.length >= 2 && dishName.any { it.isLetter() } && !keyboardNoiseTokens.any { dishName.lowercase().contains(it) }) {
-                                val isNonVeg = dishName.contains("chicken", ignoreCase = true) ||
-                                        dishName.contains("mutton", ignoreCase = true) ||
-                                        dishName.contains("egg", ignoreCase = true) ||
-                                        dishName.contains("fish", ignoreCase = true) ||
-                                        dishName.contains("prawn", ignoreCase = true)
-
-                                val isVeg = !isNonVeg
-                                val isJain = isVeg && !dishName.contains("onion", ignoreCase = true) && !dishName.contains("garlic", ignoreCase = true)
-                                val spice = if (dishName.contains("spicy", ignoreCase = true) || dishName.contains("chilli", ignoreCase = true) || dishName.contains("masala", ignoreCase = true)) 2 else 1
-
-                                currentItems.add(
-                                    ExtractedItemDto(
-                                        name = dishName,
-                                        price = price,
-                                        isVegetarian = isVeg,
-                                        isJain = isJain,
-                                        spiceLevel = spice,
-                                        description = "Freshly prepared"
-                                    )
-                                )
-                            }
-                        } else {
-                            val upper = line.uppercase()
-                            val isLikelyHeader = knownHeaderKeywords.any { upper.contains(it) } ||
-                                    (line.length in 3..30 && line.all { it.isLetter() || it.isWhitespace() } && line == line.uppercase())
-
-                            if (isLikelyHeader) {
-                                if (currentItems.isNotEmpty()) {
-                                    sections.add(ExtractedSectionDto(currentSectionName, currentItems.toList()))
-                                    currentItems = mutableListOf()
-                                }
-                                currentSectionName = line
-                            } else if (culinaryKeywords.any { lower.contains(it) } && line.length in 3..35 && line.any { it.isLetter() } && !line.any { it.isDigit() }) {
-                                // Food item line without explicit price
-                                val isNonVeg = line.contains("chicken", ignoreCase = true) ||
-                                        line.contains("mutton", ignoreCase = true) ||
-                                        line.contains("egg", ignoreCase = true) ||
-                                        line.contains("fish", ignoreCase = true)
-                                val isVeg = !isNonVeg
-
-                                currentItems.add(
-                                    ExtractedItemDto(
-                                        name = line,
-                                        price = 100L,
-                                        isVegetarian = isVeg,
-                                        isJain = isVeg && !line.contains("onion", ignoreCase = true) && !line.contains("garlic", ignoreCase = true),
-                                        spiceLevel = 1,
-                                        description = "Freshly prepared"
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    if (currentItems.isNotEmpty()) {
-                        sections.add(ExtractedSectionDto(currentSectionName, currentItems))
-                    }
-
-                    if (sections.isNotEmpty() && sections.any { it.items.isNotEmpty() }) {
-                        continuation.resume(ExtractedMenuDto(restaurantNameCandidate, sections))
-                    } else {
-                        continuation.resume(ExtractedMenuDto("", emptyList()))
-                    }
-                }
-                .addOnFailureListener {
-                    continuation.resume(ExtractedMenuDto("", emptyList()))
-                }
         }
     }
 
     private fun getRealisticFallbackMenu(): ExtractedMenuDto {
         return ExtractedMenuDto(
-            restaurantName = "Sarva Bhavan Restaurant",
+            restaurantName = "Sarva Bhavan Vegetarian",
             sections = listOf(
                 ExtractedSectionDto(
-                    sectionName = "Tiffins & Dosas",
+                    sectionName = "Breakfast & Tiffins",
                     items = listOf(
-                        ExtractedItemDto("Crispy Masala Dosa", 90L, isVegetarian = true, isJain = false, spiceLevel = 1, description = "Golden crepe with spiced potato filling"),
-                        ExtractedItemDto("Plain Ghee Roast Dosa", 80L, isVegetarian = true, isJain = true, spiceLevel = 0, description = "Crispy butter roasted crepe"),
-                        ExtractedItemDto("Steamed Idli Sambar (2 pcs)", 50L, isVegetarian = true, isJain = true, spiceLevel = 0, description = "Fluffy rice cakes with aromatic sambar"),
-                        ExtractedItemDto("Meduvadai (2 pcs)", 60L, isVegetarian = true, isJain = true, spiceLevel = 1, description = "Crispy lentil fritters with chutney"),
-                        ExtractedItemDto("Poori Masala (2 pcs)", 80L, isVegetarian = true, isJain = false, spiceLevel = 1, description = "Fluffy deep fried bread with potato curry")
+                        ExtractedItemDto("Masala Dosa", 120, true, false, false, true, 1, "Crisp rice crepe stuffed with spiced potato filling"),
+                        ExtractedItemDto("Plain Dosa", 80, true, true, true, true, 0, "Golden crispy rice crepe served with coconut chutney and sambar"),
+                        ExtractedItemDto("Ghee Karam Dosa", 140, true, false, false, true, 2, "Spicy Andhra chili paste and pure ghee roasted dosa"),
+                        ExtractedItemDto("Idli Sambar (2 pcs)", 70, true, true, true, true, 0, "Steamed fluffy rice cakes served with piping hot sambar"),
+                        ExtractedItemDto("Medu Vada (2 pcs)", 80, true, true, true, true, 1, "Crispy fried lentil doughnuts with chutney")
                     )
                 ),
                 ExtractedSectionDto(
-                    sectionName = "Curries & Breads",
+                    sectionName = "Main Course Curries",
                     items = listOf(
-                        ExtractedItemDto("Paneer Butter Masala", 240L, isVegetarian = true, isJain = true, spiceLevel = 1, description = "Cottage cheese in rich buttery tomato cashew gravy"),
-                        ExtractedItemDto("Kadai Paneer", 220L, isVegetarian = true, isJain = false, spiceLevel = 2, description = "Paneer tossed with bell peppers and freshly ground kadai spices"),
-                        ExtractedItemDto("Dal Makhani", 190L, isVegetarian = true, isJain = true, spiceLevel = 0, description = "Slow cooked black lentils with cream and butter"),
-                        ExtractedItemDto("Butter Naan", 45L, isVegetarian = true, isJain = true, spiceLevel = 0, description = "Tandoor baked soft leavened bread brushed with butter"),
-                        ExtractedItemDto("Garlic Naan", 55L, isVegetarian = true, isJain = false, spiceLevel = 1, description = "Tandoor naan topped with minced garlic and cilantro")
+                        ExtractedItemDto("Paneer Butter Masala", 240, true, false, false, false, 1, "Cottage cheese cubes in rich tomato cashew butter gravy"),
+                        ExtractedItemDto("Kadhai Paneer", 260, true, false, false, true, 2, "Paneer tossed with bell peppers and freshly ground kadhai spices"),
+                        ExtractedItemDto("Dal Makhani", 180, true, false, false, true, 1, "Slow cooked black lentils simmered with cream and butter"),
+                        ExtractedItemDto("Mixed Vegetable Curry", 200, true, true, true, true, 1, "Seasonal garden vegetables cooked in mildly spiced gravy")
+                    )
+                ),
+                ExtractedSectionDto(
+                    sectionName = "Breads & Biryani",
+                    items = listOf(
+                        ExtractedItemDto("Tandoori Roti", 35, true, true, true, true, 0, "Whole wheat flatbread baked in clay oven"),
+                        ExtractedItemDto("Butter Naan", 60, true, false, false, true, 0, "Soft leavened flatbread brushed with butter"),
+                        ExtractedItemDto("Veg Dum Biryani", 230, true, false, false, false, 2, "Fragrant basmati rice layered with spiced vegetables and saffron")
                     )
                 ),
                 ExtractedSectionDto(
                     sectionName = "Beverages & Desserts",
                     items = listOf(
-                        ExtractedItemDto("South Indian Filter Coffee", 40L, isVegetarian = true, isJain = true, spiceLevel = 0, description = "Strong aromatic decoction frothed with milk"),
-                        ExtractedItemDto("Masala Chai", 30L, isVegetarian = true, isJain = true, spiceLevel = 1, description = "Ginger and cardamom spiced hot tea"),
-                        ExtractedItemDto("Gulab Jamun (2 pcs)", 70L, isVegetarian = true, isJain = true, spiceLevel = 0, description = "Warm milk dumplings soaked in saffron rose syrup")
+                        ExtractedItemDto("South Indian Filter Coffee", 40, true, true, false, true, 0, "Traditional chicory blend brewed with frothed milk"),
+                        ExtractedItemDto("Masala Chai", 30, true, true, false, true, 1, "Spiced Indian tea infused with cardamom and ginger"),
+                        ExtractedItemDto("Gulab Jamun (2 pcs)", 70, true, false, false, true, 0, "Warm golden milk solids dumplings soaked in cardamom sugar syrup")
                     )
                 )
             )
