@@ -67,6 +67,7 @@ import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
 import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
+import com.sarvaai.app.ui.screens.dietary.DietaryAllergenExplanationScreen
 import java.util.UUID
 
 enum class AppScreen {
@@ -74,6 +75,7 @@ enum class AppScreen {
     CAMERA_CAPTURE,
     MENU_BROWSER,
     VOICE_CART,
+    DIETARY_EXPLAIN,
     RAW_VS_ACCESSIBLE
 }
 
@@ -286,6 +288,25 @@ class MainActivity : ComponentActivity() {
                             earconEngine = earconEngine,
                             selectedLanguage = selectedLanguage,
                             restaurantName = restaurantName,
+                            isAudioPlaying = isAudioPlaying,
+                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                            onStopNarration = { stopSpeech() },
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
+                        )
+                    }
+
+                    AppScreen.DIETARY_EXPLAIN -> {
+                        DietaryAllergenExplanationScreen(
+                            menuDao = database.menuDao(),
+                            groqClient = groqClient,
+                            audioRecorder = audioRecorder,
+                            asrNmtClient = asrNmtClient,
+                            hapticEngine = hapticEngine,
+                            earconEngine = earconEngine,
+                            selectedLanguage = selectedLanguage,
                             isAudioPlaying = isAudioPlaying,
                             onSpeakNarration = { playSpeech(it, selectedLanguage) },
                             onStopNarration = { stopSpeech() },
@@ -517,7 +538,7 @@ fun MainAudioPlaygroundScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Multi-Phase Feature Launch Row
+            // Multi-Phase Feature Launch Rows
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -539,6 +560,23 @@ fun MainAudioPlaygroundScreen(
                         onOpenScreen(AppScreen.VOICE_CART)
                     },
                     modifier = Modifier.weight(1f),
+                    isPrimary = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AccessibleButton(
+                    text = "🛡️ Dietary & Allergens (P8)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.DIETARY_EXPLAIN)
+                    },
+                    modifier = Modifier.weight(1.3f),
                     isPrimary = true
                 )
 
