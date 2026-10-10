@@ -1,6 +1,9 @@
 package com.sarvaai.app.menu.extractor
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.util.Base64
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
@@ -20,10 +23,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.util.UUID
 import kotlin.coroutines.resume
 
@@ -49,7 +57,7 @@ class MenuExtractor(
         var extractedDto: ExtractedMenuDto? = null
 
         // 1. Try Groq LLaMA 3.2 Vision if API key is present
-        if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your")) {
+        if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your") && jpegBytes.isNotEmpty()) {
             extractedDto = extractWithGroqVision(jpegBytes, apiKey)
         }
 
@@ -127,16 +135,51 @@ class MenuExtractor(
 
     private fun extractWithGroqVision(jpegBytes: ByteArray, apiKey: String): ExtractedMenuDto? {
         return try {
-            val base64Image = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+            val originalBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return null
+
+            var rotationDegrees = 0
+            try {
+                val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
+                val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                rotationDegrees = when (orientation) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                    else -> 0
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "EXIF rotation error: ${e.message}")
+            }
+
+            val rotatedBitmap = if (rotationDegrees != 0) {
+                val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+                Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
+            } else {
+                originalBitmap
+            }
+
+            // Downscale to max 1024 to keep payload compact and fast
+            val maxDim = 1024
+            val maxSide = maxOf(rotatedBitmap.width, rotatedBitmap.height)
+            val scale = if (maxSide > maxDim) maxDim.toFloat() / maxSide else 1.0f
+            val scaledBitmap = if (scale < 1.0f) {
+                Bitmap.createScaledBitmap(rotatedBitmap, (rotatedBitmap.width * scale).toInt(), (rotatedBitmap.height * scale).toInt(), true)
+            } else {
+                rotatedBitmap
+            }
+
+            val stream = ByteArrayOutputStream()
+            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+            val compressedBytes = stream.toByteArray()
+            val base64Image = Base64.encodeToString(compressedBytes, Base64.NO_WRAP)
             val dataUri = "data:image/jpeg;base64,$base64Image"
 
             val systemPrompt = """
             You are an expert menu extraction assistant for Indian restaurants.
-            Extract the menu from the image into exact JSON format.
-            Include restaurantName, sections, item names, prices in Indian Rupees, dietary flags (isVegetarian, isJain, isVegan, isNutFree), spiceLevel (0=Mild, 1=Medium, 2=Spicy, 3=Very Spicy), and descriptions.
-            Format:
+            Extract all restaurant menu items, categories/sections, and prices visible in the image.
+            Format as JSON:
             {
-              "restaurantName": "String",
+              "restaurantName": "Restaurant Name",
               "sections": [
                 {
                   "sectionName": "Tiffins & Dosas",
@@ -147,7 +190,7 @@ class MenuExtractor(
                       "isVegetarian": true,
                       "isJain": false,
                       "spiceLevel": 1,
-                      "description": "Crispy golden crepe with spiced potato filling"
+                      "description": "Crispy crepe with potato filling"
                     }
                   ]
                 }
@@ -183,15 +226,26 @@ class MenuExtractor(
             val body = response.body?.string()
 
             if (response.isSuccessful && !body.isNullOrEmpty()) {
-                val cleanJson = body
+                val rootJson = json.parseToJsonElement(body).jsonObject
+                val rawContent = rootJson["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+                    ?.get("message")?.jsonObject
+                    ?.get("content")?.jsonPrimitive?.content ?: ""
+
+                val cleanJson = rawContent
                     .replace(Regex("^```(?:json)?", RegexOption.IGNORE_CASE), "")
                     .replace(Regex("```$", RegexOption.IGNORE_CASE), "")
                     .trim()
-                json.decodeFromString<ExtractedMenuDto>(cleanJson)
+
+                if (cleanJson.isNotBlank()) {
+                    val parsedDto = json.decodeFromString<ExtractedMenuDto>(cleanJson)
+                    if (parsedDto.sections.isNotEmpty() && parsedDto.sections.any { it.items.isNotEmpty() }) {
+                        return parsedDto
+                    }
+                }
             } else {
                 Log.w(TAG, "Groq Vision HTTP ${response.code}: $body")
-                null
             }
+            null
         } catch (e: Exception) {
             Log.w(TAG, "Groq Vision exception: ${e.message}", e)
             null
@@ -200,59 +254,128 @@ class MenuExtractor(
 
     private suspend fun extractWithLocalOcr(jpegBytes: ByteArray): ExtractedMenuDto {
         return suspendCancellableCoroutine { continuation ->
+            if (jpegBytes.isEmpty()) {
+                continuation.resume(getRealisticFallbackMenu())
+                return@suspendCancellableCoroutine
+            }
+
+            var rotationDegrees = 0
+            try {
+                val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
+                val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                rotationDegrees = when (orientation) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                    else -> 0
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "EXIF rotation read failed: ${e.message}")
+            }
+
             val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
             if (bitmap == null) {
                 continuation.resume(getRealisticFallbackMenu())
                 return@suspendCancellableCoroutine
             }
 
-            val image = InputImage.fromBitmap(bitmap, 0)
+            val image = InputImage.fromBitmap(bitmap, rotationDegrees)
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
             recognizer.process(image)
                 .addOnSuccessListener { visionText ->
-                    val lines = visionText.text.lines().map { it.trim() }.filter { it.isNotBlank() }
-                    if (lines.isEmpty()) {
+                    val textBlocks = visionText.textBlocks
+                    if (textBlocks.isEmpty()) {
                         continuation.resume(getRealisticFallbackMenu())
                         return@addOnSuccessListener
                     }
 
-                    // Heuristic Parser for OCR text
+                    // Extract and sort all text lines by vertical position
+                    val sortedLines = textBlocks.flatMap { it.lines }
+                        .sortedWith(compareBy({ it.boundingBox?.top ?: 0 }, { it.boundingBox?.left ?: 0 }))
+                        .map { it.text.trim() }
+                        .filter { it.isNotBlank() }
+
                     val sections = mutableListOf<ExtractedSectionDto>()
-                    var currentSectionName = "Specialties"
+                    var currentSectionName = "Menu Specialties"
                     var currentItems = mutableListOf<ExtractedItemDto>()
 
-                    val priceRegex = Regex("(?:₹|Rs\\.?|INR)?\\s*(\\d{2,4})")
+                    val priceRegex = Regex("(?:₹|Rs\\.?|INR|/-)?\\s*(\\d{2,4})(?:/-|\\.\\d{2})?")
+                    val knownHeaderKeywords = listOf(
+                        "STARTERS", "APPETIZERS", "TIFFIN", "DOSA", "CURRY", "CURRIES",
+                        "MAIN COURSE", "RICE", "BIRYANI", "BREADS", "ROTI", "NAAN",
+                        "BEVERAGES", "DRINKS", "HOT DRINKS", "DESSERTS", "SWEETS",
+                        "CHINESE", "SOUTH INDIAN", "NORTH INDIAN", "SPECIALS", "MENU",
+                        "టిఫిన్స్", "కూరలు", "రైస్", "డ్రింక్స్"
+                    )
 
-                    for (line in lines) {
-                        val match = priceRegex.find(line)
-                        if (match != null) {
-                            val price = match.groupValues[1].toLongOrNull() ?: 100L
-                            val name = line.replace(match.value, "").replace(Regex("[-–—.]"), "").trim()
-                            if (name.length >= 2) {
-                                val isVeg = !name.contains("chicken", ignoreCase = true) &&
-                                        !name.contains("mutton", ignoreCase = true) &&
-                                        !name.contains("egg", ignoreCase = true) &&
-                                        !name.contains("fish", ignoreCase = true)
+                    var restaurantNameCandidate = "Restaurant Menu"
+
+                    for ((index, line) in sortedLines.withIndex()) {
+                        if (index == 0 && line.length in 3..40 && !line.any { it.isDigit() }) {
+                            restaurantNameCandidate = line
+                        }
+
+                        val priceMatch = priceRegex.find(line)
+                        if (priceMatch != null) {
+                            val price = priceMatch.groupValues[1].toLongOrNull() ?: 120L
+                            val dishName = line.replace(priceMatch.value, "")
+                                .replace(Regex("[-–—.:*•|]"), " ")
+                                .replace(Regex("\\s+"), " ")
+                                .trim()
+
+                            if (dishName.length >= 2 && dishName.any { it.isLetter() }) {
+                                val isNonVeg = dishName.contains("chicken", ignoreCase = true) ||
+                                        dishName.contains("mutton", ignoreCase = true) ||
+                                        dishName.contains("egg", ignoreCase = true) ||
+                                        dishName.contains("fish", ignoreCase = true) ||
+                                        dishName.contains("prawn", ignoreCase = true)
+
+                                val isVeg = !isNonVeg
+                                val isJain = isVeg && !dishName.contains("onion", ignoreCase = true) && !dishName.contains("garlic", ignoreCase = true)
+                                val spice = if (dishName.contains("spicy", ignoreCase = true) || dishName.contains("chilli", ignoreCase = true) || dishName.contains("masala", ignoreCase = true)) 2 else 1
 
                                 currentItems.add(
                                     ExtractedItemDto(
-                                        name = name,
+                                        name = dishName,
                                         price = price,
                                         isVegetarian = isVeg,
-                                        isJain = isVeg && !name.contains("onion", ignoreCase = true) && !name.contains("garlic", ignoreCase = true),
-                                        spiceLevel = if (name.contains("masala", ignoreCase = true) || name.contains("spicy", ignoreCase = true)) 2 else 1,
-                                        description = "Authentic fresh preparation"
+                                        isJain = isJain,
+                                        spiceLevel = spice,
+                                        description = "Freshly prepared"
                                     )
                                 )
                             }
-                        } else if (line.length in 3..25 && !line.any { it.isDigit() }) {
-                            // Possible section header
-                            if (currentItems.isNotEmpty()) {
-                                sections.add(ExtractedSectionDto(currentSectionName, currentItems.toList()))
-                                currentItems = mutableListOf()
+                        } else {
+                            val upper = line.uppercase()
+                            val isLikelyHeader = knownHeaderKeywords.any { upper.contains(it) } ||
+                                    (line.length in 3..30 && line.all { it.isLetter() || it.isWhitespace() } && line == line.uppercase())
+
+                            if (isLikelyHeader) {
+                                if (currentItems.isNotEmpty()) {
+                                    sections.add(ExtractedSectionDto(currentSectionName, currentItems.toList()))
+                                    currentItems = mutableListOf()
+                                }
+                                currentSectionName = line
+                            } else if (line.length in 3..35 && line.any { it.isLetter() } && !line.any { it.isDigit() }) {
+                                // Line without explicit price (e.g. dish name on separate line)
+                                val isNonVeg = line.contains("chicken", ignoreCase = true) ||
+                                        line.contains("mutton", ignoreCase = true) ||
+                                        line.contains("egg", ignoreCase = true) ||
+                                        line.contains("fish", ignoreCase = true)
+                                val isVeg = !isNonVeg
+
+                                currentItems.add(
+                                    ExtractedItemDto(
+                                        name = line,
+                                        price = 100L,
+                                        isVegetarian = isVeg,
+                                        isJain = isVeg && !line.contains("onion", ignoreCase = true) && !line.contains("garlic", ignoreCase = true),
+                                        spiceLevel = 1,
+                                        description = "Freshly prepared"
+                                    )
+                                )
                             }
-                            currentSectionName = line
                         }
                     }
 
@@ -260,10 +383,10 @@ class MenuExtractor(
                         sections.add(ExtractedSectionDto(currentSectionName, currentItems))
                     }
 
-                    if (sections.isEmpty() || sections.all { it.items.isEmpty() }) {
-                        continuation.resume(getRealisticFallbackMenu())
+                    if (sections.isNotEmpty() && sections.any { it.items.isNotEmpty() }) {
+                        continuation.resume(ExtractedMenuDto(restaurantNameCandidate, sections))
                     } else {
-                        continuation.resume(ExtractedMenuDto("Sarva Grand Restaurant", sections))
+                        continuation.resume(getRealisticFallbackMenu())
                     }
                 }
                 .addOnFailureListener {

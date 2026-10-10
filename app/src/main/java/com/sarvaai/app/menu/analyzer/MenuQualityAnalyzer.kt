@@ -36,78 +36,91 @@ class MenuQualityAnalyzer(
             return
         }
 
-        val width = imageProxy.width
-        val height = imageProxy.height
+        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+        val isRotated = rotationDegrees == 90 || rotationDegrees == 270
+        val frameWidth = if (isRotated) imageProxy.height else imageProxy.width
+        val frameHeight = if (isRotated) imageProxy.width else imageProxy.height
 
-        // 1. Calculate Average Luma from Y-plane
-        val yBuffer = imageProxy.planes[0].buffer
+        // 1. Calculate Average Luma from Y-plane safely
+        val yPlane = imageProxy.planes[0]
+        val yBuffer = yPlane.buffer.asReadOnlyBuffer()
         var sumLuma = 0L
         val totalPixels = yBuffer.remaining()
-        val step = 16 // Sub-sample for speed
+        val step = 32 // Sub-sample
         var sampledPixels = 0
 
-        for (i in 0 until totalPixels step step) {
-            sumLuma += (yBuffer.get(i).toInt() and 0xFF)
+        var pos = 0
+        while (pos < totalPixels) {
+            sumLuma += (yBuffer.get(pos).toInt() and 0xFF)
             sampledPixels++
+            pos += step
         }
         val avgLuma = if (sampledPixels > 0) sumLuma.toDouble() / sampledPixels else 128.0
 
-        if (avgLuma < 40) {
+        if (avgLuma < 15) { // Truly pitch black / lens covered
             emitCue(CoachingCue.TOO_DARK)
             stableFrameCount = 0
             imageProxy.close()
             return
-        } else if (avgLuma > 235) {
+        } else if (avgLuma > 245) { // Intense over-exposure glare
             emitCue(CoachingCue.TOO_BRIGHT)
             stableFrameCount = 0
             imageProxy.close()
             return
         }
 
-        // 2. ML Kit Text Boundary Clipping Check
+        // 2. ML Kit Text Recognition for framing & alignment
         isProcessingMlKit = true
-        val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
 
         textRecognizer.process(inputImage)
             .addOnSuccessListener { visionText ->
-                var clippedCue: CoachingCue? = null
                 val blocks = visionText.textBlocks
+                if (blocks.isEmpty()) {
+                    // No text detected yet - do not emit random cues
+                    stableFrameCount = 0
+                    return@addOnSuccessListener
+                }
+
+                // Compute union bounding box across all text blocks
+                var minLeft = frameWidth
+                var maxRight = 0
+                var minTop = frameHeight
+                var maxBottom = 0
 
                 for (block in blocks) {
                     val box = block.boundingBox ?: continue
-                    if (box.top < height * 0.05) {
-                        clippedCue = CoachingCue.MOVE_UP
-                        break
-                    }
-                    if (box.bottom > height * 0.95) {
-                        clippedCue = CoachingCue.MOVE_DOWN
-                        break
-                    }
-                    if (box.left < width * 0.05) {
-                        clippedCue = CoachingCue.MOVE_LEFT
-                        break
-                    }
-                    if (box.right > width * 0.95) {
-                        clippedCue = CoachingCue.MOVE_RIGHT
-                        break
-                    }
+                    if (box.left < minLeft) minLeft = box.left
+                    if (box.right > maxRight) maxRight = box.right
+                    if (box.top < minTop) minTop = box.top
+                    if (box.bottom > maxBottom) maxBottom = box.bottom
                 }
 
-                if (clippedCue != null) {
-                    emitCue(clippedCue)
-                    stableFrameCount = 0
-                } else if (blocks.isNotEmpty()) {
-                    // Framing is clean and text is detected
+                val centerX = (minLeft + maxRight) / 2.0f / frameWidth
+                val centerY = (minTop + maxBottom) / 2.0f / frameHeight
+
+                val cue: CoachingCue = when {
+                    centerX < 0.20f -> CoachingCue.MOVE_RIGHT
+                    centerX > 0.80f -> CoachingCue.MOVE_LEFT
+                    centerY < 0.20f -> CoachingCue.MOVE_DOWN
+                    centerY > 0.80f -> CoachingCue.MOVE_UP
+                    else -> CoachingCue.PERFECT_ALIGNMENT
+                }
+
+                emitCue(cue)
+
+                if (cue == CoachingCue.PERFECT_ALIGNMENT) {
                     stableFrameCount++
-                    emitCue(CoachingCue.PERFECT_ALIGNMENT)
-                    if (stableFrameCount >= 10) { // ~1.0-1.5 seconds of clean framing
+                    if (stableFrameCount >= 8) { // Stable for ~1.0 sec
                         onStabilityConfirmed()
                         stableFrameCount = 0
                     }
+                } else {
+                    stableFrameCount = 0
                 }
             }
             .addOnFailureListener {
-                // Ignore transient frame recognition failures
+                // Ignore transient frame recognition errors
             }
             .addOnCompleteListener {
                 isProcessingMlKit = false
@@ -117,7 +130,7 @@ class MenuQualityAnalyzer(
 
     private fun emitCue(cue: CoachingCue) {
         val now = System.currentTimeMillis()
-        if (now - lastCueTimeMs > 2500L) { // Throttle audio cues to every 2.5s
+        if (now - lastCueTimeMs > 3000L) { // Throttle audio cues to every 3.0s
             lastCueTimeMs = now
             onCoachingFeedback(cue)
         }
