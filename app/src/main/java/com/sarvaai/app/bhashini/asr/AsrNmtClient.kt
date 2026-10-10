@@ -136,6 +136,13 @@ class AsrNmtClient(
                     Log.w(TAG, "MT request failed, falling back to original transcript", e)
                 }
             }
+
+            // Domain Lexical Normalization (e.g. 'mistakes/faults' -> 'dosas')
+            englishTranslation = RestaurantLexicalNormalizer.postProcessTranslation(
+                rawEnglishTranslation = englishTranslation,
+                nativeTranscript = transcript,
+                sourceLanguage = lang
+            )
         } else {
             // English mode: English goes directly to LLM dialog engine (0ms NMT latency).
             // Concurrently generate staff translation (English -> Hindi) for waiter / kitchen assistive display

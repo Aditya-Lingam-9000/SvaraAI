@@ -54,3 +54,6 @@ Icon
 
 # Profiler memory dumps
 *.hprof
+
+# Screenshots
+*.png
