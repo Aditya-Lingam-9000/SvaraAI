@@ -63,6 +63,7 @@ import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.llm.models.StructuredAiResponse
 import com.sarvaai.app.menu.extractor.MenuExtractor
 import com.sarvaai.app.data.entities.CartItemEntity
+import com.sarvaai.app.ui.screens.bill.SmartBillSplitScreen
 import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
 import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
@@ -76,6 +77,7 @@ enum class AppScreen {
     MENU_BROWSER,
     VOICE_CART,
     WAITER_BRIDGE,
+    SMART_BILL,
     RAW_VS_ACCESSIBLE
 }
 
@@ -312,6 +314,23 @@ class MainActivity : ComponentActivity() {
                                 playSpeech(textToSpeak, langToSpeak)
                             },
                             onStopAudio = { stopSpeech() },
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
+                        )
+                    }
+
+                    AppScreen.SMART_BILL -> {
+                        SmartBillSplitScreen(
+                            cartDao = database.cartDao(),
+                            hapticEngine = hapticEngine,
+                            earconEngine = earconEngine,
+                            selectedLanguage = selectedLanguage,
+                            restaurantName = restaurantName,
+                            isAudioPlaying = isAudioPlaying,
+                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                            onStopNarration = { stopSpeech() },
                             onClose = {
                                 stopSpeech()
                                 currentScreen = AppScreen.PLAYGROUND
@@ -583,12 +602,29 @@ fun MainAudioPlaygroundScreen(
                 )
 
                 AccessibleButton(
+                    text = "💳 Smart Bill (P11)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.SMART_BILL)
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AccessibleButton(
                     text = "⚖️ Jury Mode (P4)",
                     onClick = {
                         hapticEngine.trigger(HapticPattern.CLICK)
                         onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     isPrimary = false
                 )
             }
