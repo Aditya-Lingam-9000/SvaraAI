@@ -1,0 +1,56 @@
+# Built application files
+*.apk
+*.aab
+*.aar
+*.ap_
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+app/build/
+.gradle/
+
+# Gradle and Local Config
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+local.properties
+*access*.json
+
+# Android Studio & IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.cproject
+.settings/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# macOS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Log files
+*.log
+
+# Keystores & Signing
+*.jks
+*.keystore
+
+# Profiler memory dumps
+*.hprof
