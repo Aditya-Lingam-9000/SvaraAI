@@ -48,7 +48,9 @@ fun MenuBrowserScreen(
     selectedLanguage: String,
     hapticEngine: HapticFeedbackEngine,
     earconEngine: EarconEngine,
+    isAudioPlaying: Boolean = false,
     onSpeakNarration: (String) -> Unit,
+    onStopNarration: () -> Unit = {},
     onAddItemToCart: (MenuItemEntity) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -56,6 +58,12 @@ fun MenuBrowserScreen(
     var selectedSectionIndex by remember { mutableStateOf(0) }
     var filterVegOnly by remember { mutableStateOf(false) }
     var filterJainOnly by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onStopNarration()
+        }
+    }
 
     val navigator = remember(sections, itemsBySection) {
         VoiceMenuNavigator(sections, itemsBySection)
@@ -107,9 +115,26 @@ fun MenuBrowserScreen(
                     )
                 }
 
+                if (isAudioPlaying) {
+                    IconButton(
+                        onClick = onStopNarration,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(36.dp)
+                            .background(NonVegRed.copy(alpha = 0.2f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "Stop speech narration",
+                            tint = NonVegRed
+                        )
+                    }
+                }
+
                 IconButton(
                     onClick = {
                         hapticEngine.trigger(HapticPattern.CLICK)
+                        onStopNarration()
                         onClose()
                     }
                 ) {

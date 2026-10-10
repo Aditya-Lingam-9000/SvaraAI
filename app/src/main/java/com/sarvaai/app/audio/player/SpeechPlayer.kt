@@ -154,6 +154,7 @@ class SpeechPlayer(private val context: Context) {
     fun stop() {
         try {
             mainHandler.removeCallbacks(progressUpdater)
+            exoPlayer.playWhenReady = false
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
             _isPlaying.value = false

@@ -50,6 +50,8 @@ import com.sarvaai.app.core.result.Result
 import com.sarvaai.app.data.db.AppDatabase
 import com.sarvaai.app.ui.components.*
 import com.sarvaai.app.ui.theme.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 import com.sarvaai.app.data.entities.MenuItemEntity
@@ -80,6 +82,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var speechPlayer: SpeechPlayer
     private lateinit var groqClient: GroqClient
     private lateinit var menuExtractor: MenuExtractor
+    private var activeSpeechJob: Job? = null
+
+    private fun stopGlobalSpeech() {
+        activeSpeechJob?.cancel()
+        activeSpeechJob = null
+        if (::speechPlayer.isInitialized) {
+            speechPlayer.stop()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,21 +116,30 @@ class MainActivity : ComponentActivity() {
             var menuItemsBySection by remember { mutableStateOf<Map<String, List<MenuItemEntity>>>(emptyMap()) }
             var restaurantName by remember { mutableStateOf("Sarva Bhavan Restaurant") }
 
+            val isAudioPlaying by speechPlayer.isPlaying.collectAsState()
+
+            fun stopSpeech() {
+                stopGlobalSpeech()
+            }
+
             fun playSpeech(text: String, lang: String = selectedLanguage) {
                 val cleanText = text.trim()
                 if (cleanText.isBlank() || !cleanText.any { it.isLetterOrDigit() }) return
 
-                lifecycleScope.launch {
-                    speechPlayer.stop()
+                stopGlobalSpeech()
+
+                activeSpeechJob = lifecycleScope.launch {
                     val chunks = SentenceChunker.splitIntoChunks(cleanText)
                     if (chunks.isEmpty()) return@launch
 
                     for ((index, chunk) in chunks.withIndex()) {
+                        if (!isActive) break
                         if (chunk.isBlank() || !chunk.any { it.isLetterOrDigit() }) continue
                         val res = ttsClient.synthesizeSpeech(chunk, lang)
+                        if (!isActive) break
                         if (res is Result.Success) {
                             val audioFile = res.data.audioFile
-                            if (audioFile != null) {
+                            if (audioFile != null && isActive) {
                                 speechPlayer.enqueueAudioFile(audioFile, clearQueue = (index == 0))
                             }
                         }
@@ -142,7 +162,10 @@ class MainActivity : ComponentActivity() {
                             isHighContrast = isHighContrast,
                             selectedLanguage = selectedLanguage,
                             onLanguageSelected = { selectedLanguage = it },
-                            onOpenScreen = { currentScreen = it },
+                            onOpenScreen = {
+                                stopSpeech()
+                                currentScreen = it
+                            },
                             onToggleHighContrast = { isHighContrast = !isHighContrast }
                         )
                     }
@@ -154,13 +177,18 @@ class MainActivity : ComponentActivity() {
                             earconEngine = earconEngine,
                             selectedLanguage = selectedLanguage,
                             onSpeakAnnouncement = { playSpeech(it, selectedLanguage) },
+                            onStopAnnouncement = { stopSpeech() },
                             onMenuExtracted = { parsed ->
+                                stopSpeech()
                                 restaurantName = parsed.menu.restaurantName
                                 menuSections = parsed.sections
                                 menuItemsBySection = parsed.items.groupBy { it.sectionId }
                                 currentScreen = AppScreen.MENU_BROWSER
                             },
-                            onClose = { currentScreen = AppScreen.PLAYGROUND }
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
                         )
                     }
 
@@ -172,20 +200,30 @@ class MainActivity : ComponentActivity() {
                             selectedLanguage = selectedLanguage,
                             hapticEngine = hapticEngine,
                             earconEngine = earconEngine,
+                            isAudioPlaying = isAudioPlaying,
                             onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                            onStopNarration = { stopSpeech() },
                             onAddItemToCart = { item ->
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                             },
-                            onClose = { currentScreen = AppScreen.PLAYGROUND }
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
                         )
                     }
 
                     AppScreen.RAW_VS_ACCESSIBLE -> {
                         RawVsAccessibleDebugView(
+                            isAudioPlaying = isAudioPlaying,
                             onPlayAudio = { textToPlay, langToPlay ->
                                 playSpeech(textToPlay, langToPlay)
                             },
-                            onClose = { currentScreen = AppScreen.PLAYGROUND }
+                            onStopAudio = { stopSpeech() },
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
                         )
                     }
                 }
@@ -195,6 +233,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        stopGlobalSpeech()
         if (::audioRecorder.isInitialized) {
             audioRecorder.stopRecording()
         }
@@ -205,6 +244,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        stopGlobalSpeech()
         if (::audioRecorder.isInitialized) {
             audioRecorder.stopRecording()
         }
@@ -215,6 +255,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopGlobalSpeech()
         if (::audioRecorder.isInitialized) {
             audioRecorder.release()
         }
@@ -280,17 +321,28 @@ fun MainAudioPlaygroundScreen(
         }
     }
 
+    var activePlaygroundPlaybackJob by remember { mutableStateOf<Job?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            activePlaygroundPlaybackJob?.cancel()
+            speechPlayer.stop()
+        }
+    }
+
     fun playSampleText(textToSynthesize: String, targetLang: String) {
         val cleanText = textToSynthesize.trim()
         if (cleanText.isBlank() || !cleanText.any { it.isLetterOrDigit() }) {
             return
         }
 
-        scope.launch {
-            if (isRecording) {
-                audioRecorder.stopRecording()
-            }
-            speechPlayer.stop()
+        activePlaygroundPlaybackJob?.cancel()
+        if (isRecording) {
+            audioRecorder.stopRecording()
+        }
+        speechPlayer.stop()
+
+        activePlaygroundPlaybackJob = scope.launch {
             isProcessing = true
             errorMessage = null
             currentSpokenCaption = "Synthesizing audio..."
@@ -306,8 +358,10 @@ fun MainAudioPlaygroundScreen(
             val fullSpokenBuilder = StringBuilder()
 
             for ((index, chunk) in chunks.withIndex()) {
+                if (!isActive) break
                 if (chunk.isBlank() || !chunk.any { it.isLetterOrDigit() }) continue
                 val res = ttsClient.synthesizeSpeech(chunk, targetLang)
+                if (!isActive) break
                 when (res) {
                     is Result.Success -> {
                         val ttsData = res.data
@@ -315,14 +369,18 @@ fun MainAudioPlaygroundScreen(
                             isProcessing = false
                             currentSpokenCaption = ttsData.spokenText
                             fullSpokenBuilder.append(ttsData.spokenText)
-                            ttsData.audioFile?.let { speechPlayer.enqueueAudioFile(it, clearQueue = true) }
-                            speechSuppressor.announceAccessibilityText(ttsData.spokenText, isBhashiniAudioPlaying = true)
-                            hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                            if (isActive) {
+                                ttsData.audioFile?.let { speechPlayer.enqueueAudioFile(it, clearQueue = true) }
+                                speechSuppressor.announceAccessibilityText(ttsData.spokenText, isBhashiniAudioPlaying = true)
+                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                            }
                         } else {
                             if (fullSpokenBuilder.isNotEmpty()) fullSpokenBuilder.append(" ")
                             fullSpokenBuilder.append(ttsData.spokenText)
                             currentSpokenCaption = fullSpokenBuilder.toString()
-                            ttsData.audioFile?.let { speechPlayer.enqueueAudioFile(it, clearQueue = false) }
+                            if (isActive) {
+                                ttsData.audioFile?.let { speechPlayer.enqueueAudioFile(it, clearQueue = false) }
+                            }
                         }
                     }
                     is Result.Error -> {

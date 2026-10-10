@@ -59,6 +59,7 @@ fun CameraXMenuCaptureScreen(
     earconEngine: EarconEngine,
     selectedLanguage: String,
     onSpeakAnnouncement: (String) -> Unit,
+    onStopAnnouncement: () -> Unit = {},
     onMenuExtracted: (ParsedMenuResult) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -66,6 +67,18 @@ fun CameraXMenuCaptureScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            onStopAnnouncement()
+            try {
+                val cameraProvider = ProcessCameraProvider.getInstance(context).get()
+                cameraProvider.unbindAll()
+            } catch (e: Exception) {
+                // Ignore teardown exception
+            }
+        }
+    }
 
     var hasCameraPermission by remember { mutableStateOf(false) }
     var currentCue by remember { mutableStateOf<CoachingCue?>(null) }
@@ -267,7 +280,10 @@ fun CameraXMenuCaptureScreen(
                     )
 
                     IconButton(
-                        onClick = onClose,
+                        onClick = {
+                            onStopAnnouncement()
+                            onClose()
+                        },
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Close Camera", tint = PureWhite)

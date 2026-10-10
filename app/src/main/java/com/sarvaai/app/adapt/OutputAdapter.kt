@@ -15,6 +15,7 @@ data class AccessibleOutput(
 object OutputAdapter {
 
     private val MARKDOWN_REGEX = Regex("[*_#`~<>\\[\\]{}]")
+    private val EMOJI_REGEX = Regex("[\\p{So}\\p{Cs}\\p{Cn}\\uFE0F]")
     private val PRICE_PATTERN = Regex("₹\\s*(\\d+)")
 
     /**
@@ -34,18 +35,21 @@ object OutputAdapter {
             " " + NumberVerbalizer.verbalizePrice(amount, lang) + " "
         }
 
-        // 3. Strip unwanted markdown and special formatting
+        // 3. Strip unwanted markdown, emojis and special formatting
         val cleanSpoken = rawSpoken
+            .replace(EMOJI_REGEX, "")
             .replace(MARKDOWN_REGEX, "")
             .replace(Regex("\\s+"), " ")
             .trim()
 
         val cleanCaption = rawCaption
+            .replace(EMOJI_REGEX, "")
             .replace(MARKDOWN_REGEX, "")
             .replace(Regex("\\s+"), " ")
             .trim()
 
         val cleanHeadline = rawHeadline
+            .replace(EMOJI_REGEX, "")
             .replace(MARKDOWN_REGEX, "")
             .trim()
 
@@ -53,7 +57,7 @@ object OutputAdapter {
             PRICE_PATTERN.replace(bullet) { matchResult ->
                 val amount = matchResult.groupValues[1].toLongOrNull() ?: 0L
                 NumberVerbalizer.verbalizePrice(amount, lang)
-            }.replace(MARKDOWN_REGEX, "").trim()
+            }.replace(EMOJI_REGEX, "").replace(MARKDOWN_REGEX, "").trim()
         }
 
         // 4. Construct TalkBack announcement

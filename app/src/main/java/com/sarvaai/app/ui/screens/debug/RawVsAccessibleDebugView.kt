@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,12 +33,20 @@ import com.sarvaai.app.ui.theme.*
 
 @Composable
 fun RawVsAccessibleDebugView(
+    isAudioPlaying: Boolean = false,
     onPlayAudio: (text: String, language: String) -> Unit,
+    onStopAudio: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedLanguage by remember { mutableStateOf("te") }
     val scrollState = rememberScrollState()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onStopAudio()
+        }
+    }
 
     // Sample complex dish comparison query
     val sampleRawMarkdown = """
@@ -120,11 +129,38 @@ fun RawVsAccessibleDebugView(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = SaffronPrimary,
-                    modifier = Modifier.semantics { heading() }
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { heading() }
                 )
 
-                IconButton(onClick = onClose) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close comparison view", tint = PureWhite)
+                if (isAudioPlaying) {
+                    IconButton(
+                        onClick = onStopAudio,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(36.dp)
+                            .background(NonVegRed.copy(alpha = 0.2f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "Stop playing audio",
+                            tint = NonVegRed
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = {
+                        onStopAudio()
+                        onClose()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close comparison view",
+                        tint = PureWhite
+                    )
                 }
             }
 
@@ -148,7 +184,12 @@ fun RawVsAccessibleDebugView(
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSelected) SaffronPrimary else CharcoalSurfaceVariant)
                             .border(1.5.dp, if (isSelected) SaffronPrimary else Color(0xFF444444), RoundedCornerShape(8.dp))
-                            .clickable { selectedLanguage = code }
+                            .clickable {
+                                if (selectedLanguage != code) {
+                                    onStopAudio()
+                                    selectedLanguage = code
+                                }
+                            }
                     ) {
                         Text(
                             text = label,
