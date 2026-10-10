@@ -52,6 +52,9 @@ import com.sarvaai.app.ui.components.*
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.launch
 
+import com.sarvaai.app.llm.GroqClient
+import com.sarvaai.app.llm.models.StructuredAiResponse
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var hapticEngine: HapticFeedbackEngine
@@ -62,6 +65,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var asrNmtClient: AsrNmtClient
     private lateinit var ttsClient: BhashiniTtsClient
     private lateinit var speechPlayer: SpeechPlayer
+    private lateinit var groqClient: GroqClient
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +79,7 @@ class MainActivity : ComponentActivity() {
         asrNmtClient = AsrNmtClient()
         ttsClient = BhashiniTtsClient(this)
         speechPlayer = SpeechPlayer(this)
+        groqClient = GroqClient()
 
         setContent {
             var isHighContrast by remember { mutableStateOf(false) }
@@ -85,6 +90,7 @@ class MainActivity : ComponentActivity() {
                     asrNmtClient = asrNmtClient,
                     ttsClient = ttsClient,
                     speechPlayer = speechPlayer,
+                    groqClient = groqClient,
                     hapticEngine = hapticEngine,
                     earconEngine = earconEngine,
                     speechSuppressor = speechSuppressor,
@@ -132,6 +138,7 @@ fun MainAudioPlaygroundScreen(
     asrNmtClient: AsrNmtClient,
     ttsClient: BhashiniTtsClient,
     speechPlayer: SpeechPlayer,
+    groqClient: GroqClient,
     hapticEngine: HapticFeedbackEngine,
     earconEngine: EarconEngine,
     speechSuppressor: DoubleSpeechSuppressor,
@@ -153,6 +160,7 @@ fun MainAudioPlaygroundScreen(
 
     var isProcessing by remember { mutableStateOf(false) }
     var ingestionResult by remember { mutableStateOf<IngestionResult?>(null) }
+    var structuredAiResponse by remember { mutableStateOf<StructuredAiResponse?>(null) }
     var currentSpokenCaption by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -262,7 +270,7 @@ fun MainAudioPlaygroundScreen(
             )
 
             Text(
-                text = "Phase 3: Real-Time Audio Playback & Live Captions",
+                text = "Phase 3: Real-Time Audio Playback & Multilingual Intelligence",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -392,21 +400,42 @@ fun MainAudioPlaygroundScreen(
                                     earconEngine.play(EarconType.LISTEN_STOP)
                                     isProcessing = true
                                     scope.launch {
-                                        // Step 1: Ingestion (ASR + NMT)
+                                        // Step 1: Ingestion (ASR)
                                         val res = asrNmtClient.transcribeAndTranslate(wavBytes, selectedLanguage)
                                         when (res) {
                                             is Result.Success -> {
                                                 ingestionResult = res.data
                                                 errorMessage = null
 
-                                                // Step 2: Synthesize AI Response in target language & Stream Playback
-                                                val englishResponse = if (res.data.originalTranscript.isNotBlank() && res.data.originalTranscript.any { it.isLetterOrDigit() }) {
-                                                    val recognizedItem = if (res.data.englishTranslation.isNotBlank()) res.data.englishTranslation else res.data.originalTranscript
-                                                    "I understood your request for $recognizedItem. Adding it to your order."
+                                                val rawTranscript = res.data.originalTranscript.trim()
+                                                if (rawTranscript.isNotBlank() && rawTranscript.any { it.isLetterOrDigit() }) {
+                                                    // Step 2: Intelligent Multilingual Intent & Conversational Reasoning
+                                                    val intentResult = groqClient.processSpeechIntent(rawTranscript, selectedLanguage)
+                                                    when (intentResult) {
+                                                        is Result.Success -> {
+                                                            val aiResp = intentResult.data
+                                                            structuredAiResponse = aiResp
+                                                            // Step 3: Directly synthesize the AI's natural spoken response in customer's language
+                                                            playSampleText(aiResp.spoken, selectedLanguage)
+                                                        }
+                                                        is Result.Error -> {
+                                                            val fallbackText = when (selectedLanguage) {
+                                                                "te" -> "మీ $rawTranscript ఆర్డర్‌లో చేర్చాను. ఇంకా ఏమైనా కావాలా?"
+                                                                "hi" -> "आपके $rawTranscript को ऑर्डर में जोड़ दिया गया है। क्या आप कुछ और लेना चाहेंगे?"
+                                                                else -> "I have added $rawTranscript to your order. Would you like anything else?"
+                                                            }
+                                                            playSampleText(fallbackText, selectedLanguage)
+                                                        }
+                                                        else -> {}
+                                                    }
                                                 } else {
-                                                    "I could not hear any speech clearly. Please try speaking again."
+                                                    val noSpeechText = when (selectedLanguage) {
+                                                        "te" -> "క్షమించండి, మీ మాటలు వినపడలేదు. దయచేసి మళ్ళీ మాట్లాడండి."
+                                                        "hi" -> "माफ़ कीजिए, आवाज़ स्पष्ट नहीं थी। कृपया फिर से बोलें।"
+                                                        else -> "I could not hear any speech clearly. Please try speaking again."
+                                                    }
+                                                    playSampleText(noSpeechText, selectedLanguage)
                                                 }
-                                                playSampleText(englishResponse, selectedLanguage)
                                             }
                                             is Result.Error -> {
                                                 isProcessing = false
@@ -449,7 +478,7 @@ fun MainAudioPlaygroundScreen(
             // VAD & Playback Status
             Text(
                 text = when {
-                    isProcessing -> "Processing with Bhashini ASR + TTS..."
+                    isProcessing -> "Processing with Bhashini ASR + AI Reasoner..."
                     isAudioPlaying -> "Speaking aloud via ExoPlayer (Streaming)..."
                     isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> "Speech Active (Listening...)"
                     isRecording && vadStatus == VadStatus.CALIBRATING -> "Calibrating ambient noise..."
@@ -489,7 +518,7 @@ fun MainAudioPlaygroundScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Quick TTS Demonstration Triggers
+            // Quick TTS Demonstration Triggers (Language-Native)
             Text(
                 text = "Quick Voice Assistant Audio Prompts",
                 fontSize = 14.sp,
@@ -505,7 +534,11 @@ fun MainAudioPlaygroundScreen(
                 AccessibleButton(
                     text = "Order Menu Intro",
                     onClick = {
-                        val prompt = "Welcome to SarvaAI. We have hot crispy masala dosa, idli sambar, and filter coffee today. What would you like to order?"
+                        val prompt = when (selectedLanguage) {
+                            "te" -> "సర్వ ఏఐ కి స్వాగతం. ఈరోజు మా వద్ద వేడి వేడి మసాలా దోశ, ఇడ్లీ సాంబార్, మరియు ఫిల్టర్ కాఫీ ఉన్నాయి. మీరు ఏమి ఆర్డర్ చేయాలనుకుంటున్నారు?"
+                            "hi" -> "सर्व एआई में आपका स्वागत है। आज हमारे पास गरमा-गरम मसाला डोसा, इडली सांभर और फ़िल्टर कॉफ़ी है। आप क्या ऑर्डर करना चाहेंगे?"
+                            else -> "Welcome to SarvaAI. We have hot crispy masala dosa, idli sambar, and filter coffee today. What would you like to order?"
+                        }
                         playSampleText(prompt, selectedLanguage)
                     },
                     modifier = Modifier.weight(1f),
@@ -515,7 +548,11 @@ fun MainAudioPlaygroundScreen(
                 AccessibleButton(
                     text = "Confirm Order",
                     onClick = {
-                        val prompt = "Your order for two masala dosas and one filter coffee has been placed successfully. Your total is one hundred and eighty rupees."
+                        val prompt = when (selectedLanguage) {
+                            "te" -> "మీ రెండు మసాలా దోశలు మరియు ఒక ఫిల్టర్ కాఫీ ఆర్డర్ చేయబడ్డాయి. మొత్తం బిల్లు నూట ఎనభై రూపాయలు."
+                            "hi" -> "आपके दो मसाला डोसे और एक फ़िल्टर कॉफ़ी का ऑर्डर हो गया है। कुल राशि एक सौ अस्सी रुपये है।"
+                            else -> "Your order for two masala dosas and one filter coffee has been placed successfully. Your total is one hundred and eighty rupees."
+                        }
                         playSampleText(prompt, selectedLanguage)
                     },
                     modifier = Modifier.weight(1f),
@@ -525,8 +562,8 @@ fun MainAudioPlaygroundScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Ingestion Results Card
-            AnimatedVisibility(visible = ingestionResult != null || errorMessage != null) {
+            // Ingestion & AI Understanding Diagnostics Card
+            AnimatedVisibility(visible = ingestionResult != null || structuredAiResponse != null || errorMessage != null) {
                 AccessibleCard(
                     borderColor = if (errorMessage != null) NonVegRed else SaffronPrimary
                 ) {
@@ -558,10 +595,8 @@ fun MainAudioPlaygroundScreen(
                     }
 
                     ingestionResult?.let { res ->
-                        val isEnglishInput = res.sourceLanguage == "en"
-
                         Text(
-                            text = if (isEnglishInput) "Recognized English Speech:" else "Native Speech (${res.sourceLanguage.uppercase()}):",
+                            text = "Recognized Native Speech (${res.sourceLanguage.uppercase()}):",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = SubtitleText
@@ -569,55 +604,80 @@ fun MainAudioPlaygroundScreen(
                         Text(
                             text = if (res.originalTranscript.isNotEmpty()) res.originalTranscript else "(No speech detected)",
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.SemiBold,
                             color = PureWhite
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
+                    }
 
-                        if (isEnglishInput) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = VegGreen,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "AI Intent Engine: Direct English (0ms NMT Latency)",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = VegGreen
-                                )
-                            }
-                        } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.SwapHoriz,
-                                    contentDescription = null,
-                                    tint = SaffronPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Unified Order Translation (English):",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = SubtitleText
-                                )
-                            }
+                    structuredAiResponse?.let { ai ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Psychology,
+                                contentDescription = null,
+                                tint = VegGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (res.englishTranslation.isNotEmpty()) res.englishTranslation else "(Empty)",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = SaffronPrimary
+                                text = "AI Intent: ${ai.intent}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = VegGreen
                             )
                         }
 
+                        Text(
+                            text = ai.headline,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = SaffronPrimary
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Spoken Response (${selectedLanguage.uppercase()}):",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = SubtitleText
+                        )
+                        Text(
+                            text = ai.spoken,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = PureWhite
+                        )
+
+                        if (ai.actions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ai.actions.forEach { action ->
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(SaffronPrimary.copy(alpha = 0.2f))
+                                            .border(1.dp, SaffronPrimary, RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "⚡ ${action.label}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SaffronPrimary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ingestionResult?.let { res ->
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "ASR+NMT Latency: ${res.latencyMs} ms",
+                            text = "ASR Latency: ${res.latencyMs} ms",
                             fontSize = 12.sp,
                             color = MutedText
                         )

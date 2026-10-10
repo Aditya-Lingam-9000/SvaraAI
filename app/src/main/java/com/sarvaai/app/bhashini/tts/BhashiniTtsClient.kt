@@ -34,7 +34,7 @@ data class TtsSynthesisResult(
 class BhashiniTtsClient(
     private val context: Context? = null,
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
-    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 ) {
     companion object {
         private const val TAG = "BhashiniTtsClient"

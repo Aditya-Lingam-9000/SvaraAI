@@ -26,7 +26,7 @@ data class CachedPipelineConfig(
 
 class BhashiniConfigManager(
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
-    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 ) {
     private val mutex = Mutex()
     private var cachedConfig: CachedPipelineConfig? = null
