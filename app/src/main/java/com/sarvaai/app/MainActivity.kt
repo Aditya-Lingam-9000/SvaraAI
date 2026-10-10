@@ -52,8 +52,21 @@ import com.sarvaai.app.ui.components.*
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.launch
 
+import com.sarvaai.app.data.entities.MenuItemEntity
+import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.llm.models.StructuredAiResponse
+import com.sarvaai.app.menu.extractor.MenuExtractor
+import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
+import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
+import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
+
+enum class AppScreen {
+    PLAYGROUND,
+    CAMERA_CAPTURE,
+    MENU_BROWSER,
+    RAW_VS_ACCESSIBLE
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -66,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var ttsClient: BhashiniTtsClient
     private lateinit var speechPlayer: SpeechPlayer
     private lateinit var groqClient: GroqClient
+    private lateinit var menuExtractor: MenuExtractor
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,23 +94,86 @@ class MainActivity : ComponentActivity() {
         ttsClient = BhashiniTtsClient(this)
         speechPlayer = SpeechPlayer(this)
         groqClient = GroqClient()
+        menuExtractor = MenuExtractor(database.menuDao())
 
         setContent {
             var isHighContrast by remember { mutableStateOf(false) }
+            var currentScreen by remember { mutableStateOf(AppScreen.PLAYGROUND) }
+            var selectedLanguage by remember { mutableStateOf("hi") }
+
+            var menuSections by remember { mutableStateOf<List<MenuSectionEntity>>(emptyList()) }
+            var menuItemsBySection by remember { mutableStateOf<Map<String, List<MenuItemEntity>>>(emptyMap()) }
+            var restaurantName by remember { mutableStateOf("Sarva Bhavan Restaurant") }
+
+            fun playSpeech(text: String, lang: String = selectedLanguage) {
+                lifecycleScope.launch {
+                    val res = ttsClient.synthesizeSpeech(text, lang)
+                    if (res is Result.Success) {
+                        res.data.audioFile?.let { speechPlayer.enqueueAudioFile(it, clearQueue = true) }
+                    }
+                }
+            }
 
             SarvaTheme(isHighContrast = isHighContrast) {
-                MainAudioPlaygroundScreen(
-                    audioRecorder = audioRecorder,
-                    asrNmtClient = asrNmtClient,
-                    ttsClient = ttsClient,
-                    speechPlayer = speechPlayer,
-                    groqClient = groqClient,
-                    hapticEngine = hapticEngine,
-                    earconEngine = earconEngine,
-                    speechSuppressor = speechSuppressor,
-                    isHighContrast = isHighContrast,
-                    onToggleHighContrast = { isHighContrast = !isHighContrast }
-                )
+                when (currentScreen) {
+                    AppScreen.PLAYGROUND -> {
+                        MainAudioPlaygroundScreen(
+                            audioRecorder = audioRecorder,
+                            asrNmtClient = asrNmtClient,
+                            ttsClient = ttsClient,
+                            speechPlayer = speechPlayer,
+                            groqClient = groqClient,
+                            hapticEngine = hapticEngine,
+                            earconEngine = earconEngine,
+                            speechSuppressor = speechSuppressor,
+                            isHighContrast = isHighContrast,
+                            selectedLanguage = selectedLanguage,
+                            onLanguageSelected = { selectedLanguage = it },
+                            onOpenScreen = { currentScreen = it },
+                            onToggleHighContrast = { isHighContrast = !isHighContrast }
+                        )
+                    }
+
+                    AppScreen.CAMERA_CAPTURE -> {
+                        CameraXMenuCaptureScreen(
+                            menuExtractor = menuExtractor,
+                            hapticEngine = hapticEngine,
+                            earconEngine = earconEngine,
+                            selectedLanguage = selectedLanguage,
+                            onSpeakAnnouncement = { playSpeech(it) },
+                            onMenuExtracted = { parsed ->
+                                restaurantName = parsed.menu.restaurantName
+                                menuSections = parsed.sections
+                                menuItemsBySection = parsed.items.groupBy { it.sectionId }
+                                currentScreen = AppScreen.MENU_BROWSER
+                            },
+                            onClose = { currentScreen = AppScreen.PLAYGROUND }
+                        )
+                    }
+
+                    AppScreen.MENU_BROWSER -> {
+                        MenuBrowserScreen(
+                            restaurantName = restaurantName,
+                            sections = menuSections,
+                            itemsBySection = menuItemsBySection,
+                            selectedLanguage = selectedLanguage,
+                            hapticEngine = hapticEngine,
+                            earconEngine = earconEngine,
+                            onSpeakNarration = { playSpeech(it) },
+                            onAddItemToCart = { item ->
+                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                            },
+                            onClose = { currentScreen = AppScreen.PLAYGROUND }
+                        )
+                    }
+
+                    AppScreen.RAW_VS_ACCESSIBLE -> {
+                        RawVsAccessibleDebugView(
+                            onPlayAudio = { playSpeech(it) },
+                            onClose = { currentScreen = AppScreen.PLAYGROUND }
+                        )
+                    }
+                }
             }
         }
     }
@@ -143,12 +220,14 @@ fun MainAudioPlaygroundScreen(
     earconEngine: EarconEngine,
     speechSuppressor: DoubleSpeechSuppressor,
     isHighContrast: Boolean,
+    selectedLanguage: String,
+    onLanguageSelected: (String) -> Unit,
+    onOpenScreen: (AppScreen) -> Unit,
     onToggleHighContrast: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
-    var selectedLanguage by remember { mutableStateOf("hi") } // "en", "hi", "te"
     val isRecording by audioRecorder.isRecording.collectAsState()
     val vadStatus by audioRecorder.vadStatus.collectAsState()
     val amplitude by audioRecorder.audioAmplitude.collectAsState()
@@ -270,12 +349,40 @@ fun MainAudioPlaygroundScreen(
             )
 
             Text(
-                text = "Phase 3: Real-Time Audio Playback & Multilingual Intelligence",
+                text = "Accessible Multimodal Restaurant Assistant",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Multi-Phase Feature Launch Row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AccessibleButton(
+                    text = "📸 Scan Menu (Vision)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.CAMERA_CAPTURE)
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = true
+                )
+
+                AccessibleButton(
+                    text = "⚖️ Jury Mode (P4)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = false
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -308,7 +415,7 @@ fun MainAudioPlaygroundScreen(
                             .clickable {
                                 if (isRecording) audioRecorder.stopRecording()
                                 speechPlayer.stop()
-                                selectedLanguage = lang.code
+                                onLanguageSelected(lang.code)
                                 hapticEngine.trigger(HapticPattern.CLICK)
                             }
                             .semantics {
