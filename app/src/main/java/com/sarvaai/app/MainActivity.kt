@@ -57,6 +57,8 @@ import kotlinx.coroutines.launch
 
 import androidx.compose.ui.platform.LocalContext
 import com.sarvaai.app.core.config.ApiKeyManager
+import com.sarvaai.app.adapt.inference.ProfileInferenceEngine
+import com.sarvaai.app.adapt.signals.SignalCollector
 import com.sarvaai.app.data.entities.MenuItemEntity
 import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.llm.GroqClient
@@ -67,6 +69,7 @@ import com.sarvaai.app.ui.screens.bill.SmartBillSplitScreen
 import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
 import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
+import com.sarvaai.app.ui.screens.debug.DebugSignalPanel
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
 import com.sarvaai.app.ui.screens.waiter.WaiterBridgeScreen
 import java.util.UUID
@@ -78,7 +81,8 @@ enum class AppScreen {
     VOICE_CART,
     WAITER_BRIDGE,
     SMART_BILL,
-    RAW_VS_ACCESSIBLE
+    RAW_VS_ACCESSIBLE,
+    DEBUG_SIGNAL_PANEL
 }
 
 class MainActivity : ComponentActivity() {
@@ -93,6 +97,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var speechPlayer: SpeechPlayer
     private lateinit var groqClient: GroqClient
     private lateinit var menuExtractor: MenuExtractor
+    private lateinit var signalCollector: SignalCollector
+    private lateinit var profileInferenceEngine: ProfileInferenceEngine
     private var activeSpeechJob: Job? = null
     private var androidTts: android.speech.tts.TextToSpeech? = null
 
@@ -121,6 +127,10 @@ class MainActivity : ComponentActivity() {
         speechPlayer = SpeechPlayer(this)
         groqClient = GroqClient(this)
         menuExtractor = MenuExtractor(this, database.menuDao())
+        signalCollector = SignalCollector(this)
+        profileInferenceEngine = ProfileInferenceEngine()
+        signalCollector.pollSystemSignals(resources.configuration)
+        profileInferenceEngine.evaluate(signalCollector.signals.value)
 
         try {
             androidTts = android.speech.tts.TextToSpeech(this) { status ->
@@ -354,6 +364,18 @@ class MainActivity : ComponentActivity() {
                                 playSpeech(textToPlay, langToPlay)
                             },
                             onStopAudio = { stopSpeech() },
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
+                        )
+                    }
+
+                    AppScreen.DEBUG_SIGNAL_PANEL -> {
+                        DebugSignalPanel(
+                            signalCollector = signalCollector,
+                            inferenceEngine = profileInferenceEngine,
+                            hapticEngine = hapticEngine,
                             onClose = {
                                 stopSpeech()
                                 currentScreen = AppScreen.PLAYGROUND
@@ -628,12 +650,22 @@ fun MainAudioPlaygroundScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AccessibleButton(
+                    text = "🛠️ Adaptation Debug (P12)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.DEBUG_SIGNAL_PANEL)
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = false
+                )
+
+                AccessibleButton(
                     text = "⚖️ Jury Mode (P4)",
                     onClick = {
                         hapticEngine.trigger(HapticPattern.CLICK)
                         onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                     isPrimary = false
                 )
             }

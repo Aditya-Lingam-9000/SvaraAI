@@ -1,0 +1,74 @@
+package com.sarvaai.app.adapt.signals
+
+import android.content.Context
+import android.content.res.Configuration
+import android.media.AudioManager
+import android.view.accessibility.AccessibilityManager
+import android.view.accessibility.CaptioningManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+data class CollectedSignals(
+    val isTouchExplorationOn: Boolean = false,
+    val isSystemCaptioningOn: Boolean = false,
+    val isMediaMuted: Boolean = false,
+    val fontScale: Float = 1.0f,
+    val failedAsrConsecutiveCount: Int = 0,
+    val repeatTapCount: Int = 0,
+    val averagePauseDurationMs: Long = 0L,
+    val touchlessElapsedSec: Int = 0
+)
+
+class SignalCollector(private val context: Context) {
+    private val accessibilityManager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+    private val captioningManager = context.getSystemService(Context.CAPTIONING_SERVICE) as? CaptioningManager
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    private val _signals = MutableStateFlow(CollectedSignals())
+    val signals: StateFlow<CollectedSignals> = _signals.asStateFlow()
+
+    fun pollSystemSignals(configuration: Configuration) {
+        val touchExploration = accessibilityManager?.isTouchExplorationEnabled == true
+        val captions = captioningManager?.isEnabled == true
+        val muted = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
+        val fontScale = configuration.fontScale
+
+        _signals.value = _signals.value.copy(
+            isTouchExplorationOn = touchExploration,
+            isSystemCaptioningOn = captions,
+            isMediaMuted = muted,
+            fontScale = fontScale
+        )
+    }
+
+    fun recordAsrFailure() {
+        val current = _signals.value.failedAsrConsecutiveCount
+        _signals.value = _signals.value.copy(failedAsrConsecutiveCount = current + 1)
+    }
+
+    fun resetAsrFailure() {
+        _signals.value = _signals.value.copy(failedAsrConsecutiveCount = 0)
+    }
+
+    fun recordRepeatTap() {
+        val current = _signals.value.repeatTapCount
+        _signals.value = _signals.value.copy(repeatTapCount = current + 1)
+    }
+
+    fun resetRepeatTap() {
+        _signals.value = _signals.value.copy(repeatTapCount = 0)
+    }
+
+    fun updateTouchlessElapsed(seconds: Int) {
+        _signals.value = _signals.value.copy(touchlessElapsedSec = seconds)
+    }
+
+    fun injectSimulatedSignals(simulated: CollectedSignals) {
+        _signals.value = simulated
+    }
+
+    fun resetAll() {
+        _signals.value = CollectedSignals()
+    }
+}
