@@ -34,7 +34,7 @@ data class TtsSynthesisResult(
 class BhashiniTtsClient(
     private val context: Context? = null,
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
-    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 ) {
     companion object {
         private const val TAG = "BhashiniTtsClient"
@@ -77,13 +77,18 @@ class BhashiniTtsClient(
         val lang = targetLanguage.lowercase()
         val token = if (BuildConfig.BHASHINI_INFERENCE_KEY.isNotEmpty()) BuildConfig.BHASHINI_INFERENCE_KEY else AsrNmtClient.DEFAULT_ACCESS_TOKEN
 
+        val cleanInput = englishText.trim()
+        if (cleanInput.isBlank()) {
+            return@withContext Result.Error("Cannot synthesize empty text")
+        }
+
         // Step 1: Translate to target language if not English
-        var textToSpeak = englishText.trim()
+        var textToSpeak = cleanInput
         if (lang != "en") {
             val mtEndpoint = MT_EN_TO_TARGET_ENDPOINTS[lang]
             if (mtEndpoint != null) {
                 try {
-                    val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = englishText))
+                    val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = cleanInput))
                     val mtRequest = Request.Builder()
                         .url(mtEndpoint)
                         .header("access-token", token)
@@ -124,10 +129,10 @@ class BhashiniTtsClient(
 
         // Step 2: Synthesize TTS
         val ttsEndpoint = TTS_ENDPOINTS[lang] ?: TTS_ENDPOINTS["en"]!!
-        val ttsPayload = json.encodeToString(
-            AnuvaadHubTtsRequest.serializer(),
-            AnuvaadHubTtsRequest(text = textToSpeak, gender = gender)
-        )
+        val requestObj = AnuvaadHubTtsRequest(text = textToSpeak, gender = gender)
+        val ttsPayload = json.encodeToString(AnuvaadHubTtsRequest.serializer(), requestObj)
+
+        Log.i(TAG, "Sending TTS payload to $ttsEndpoint: $ttsPayload")
 
         val ttsRequest = Request.Builder()
             .url(ttsEndpoint)

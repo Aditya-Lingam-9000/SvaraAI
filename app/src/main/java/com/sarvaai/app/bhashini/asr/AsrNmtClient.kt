@@ -19,7 +19,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class AsrNmtClient(
     private val okHttpClient: OkHttpClient = OkHttpFactory.defaultClient,
-    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 ) {
     companion object {
         private const val TAG = "AsrNmtClient"
