@@ -21,6 +21,7 @@ class AudioRecorder(
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) {
     companion object {
+        private const val TAG = "AudioRecorder"
         const val SAMPLE_RATE = 16000
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
@@ -29,6 +30,8 @@ class AudioRecorder(
         const val BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2 // 640 bytes
     }
 
+    private val lock = Any()
+    @Volatile private var isRecordingActive = false
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
     private val vad = EnergyVad(SAMPLE_RATE, FRAME_DURATION_MS)
@@ -56,122 +59,160 @@ class AudioRecorder(
             return
         }
 
-        if (_isRecording.value) {
-            stopRecording()
-        }
+        synchronized(lock) {
+            if (isRecordingActive || audioRecord != null) {
+                stopRecordingInternal()
+            }
 
-        val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-        if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-            onError("AudioRecord hardware buffer initialization failed")
-            return
-        }
+            val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+            if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
+                onError("AudioRecord hardware buffer initialization failed")
+                return
+            }
 
-        val bufferSize = (minBufferSize * 2).coerceAtLeast(BYTES_PER_FRAME * 4)
+            val bufferSize = (minBufferSize * 2).coerceAtLeast(BYTES_PER_FRAME * 4)
 
-        try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
-
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                // Fallback to standard MIC source if VOICE_RECOGNITION fails on specific hardware
-                audioRecord?.release()
-                audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
+            try {
+                var record = AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
                     SAMPLE_RATE,
                     CHANNEL_CONFIG,
                     AUDIO_FORMAT,
                     bufferSize
                 )
-                if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                    onError("Failed to initialize AudioRecord with 16kHz PCM")
-                    return
-                }
-            }
 
-            audioRecord?.startRecording()
-            _isRecording.value = true
-            vad.reset()
-
-            recordingJob = coroutineScope.launch {
-                val pcmBuffer = ByteArray(BYTES_PER_FRAME)
-                val utteranceStream = ByteArrayOutputStream()
-                var speechCaptured = false
-
-                while (isActive && _isRecording.value) {
-                    val readBytes = audioRecord?.read(pcmBuffer, 0, BYTES_PER_FRAME) ?: -1
-                    if (readBytes > 0) {
-                        val status = vad.processFrame(pcmBuffer, readBytes)
-                        _vadStatus.value = status
-
-                        // Calculate normalized amplitude for UI visualizer
-                        var maxSample = 0
-                        for (i in 0 until readBytes / 2) {
-                            val sample = Math.abs((pcmBuffer[i * 2 + 1].toInt() shl 8) or (pcmBuffer[i * 2].toInt() and 0xFF))
-                            if (sample > maxSample) maxSample = sample
-                        }
-                        _audioAmplitude.value = (maxSample / 32767f).coerceIn(0f, 1f)
-
-                        when (status) {
-                            VadStatus.SPEECH_ACTIVE -> {
-                                speechCaptured = true
-                                utteranceStream.write(pcmBuffer, 0, readBytes)
-                            }
-                            VadStatus.SPEECH_ENDED -> {
-                                if (speechCaptured && utteranceStream.size() > 0) {
-                                    val rawPcm = utteranceStream.toByteArray()
-                                    val wavBytes = WavEncoder.encodeToWav(rawPcm, SAMPLE_RATE)
-                                    withContext(Dispatchers.Main) {
-                                        onUtteranceComplete(wavBytes)
-                                    }
-                                }
-                                stopRecording()
-                                break
-                            }
-                            VadStatus.CALIBRATING, VadStatus.SILENCE -> {
-                                if (speechCaptured) {
-                                    utteranceStream.write(pcmBuffer, 0, readBytes)
-                                }
-                            }
-                        }
-                    } else if (readBytes < 0) {
-                        Log.e("AudioRecorder", "AudioRecord read error: $readBytes")
-                        break
+                if (record.state != AudioRecord.STATE_INITIALIZED) {
+                    // Fallback to standard MIC source if VOICE_RECOGNITION fails on specific hardware
+                    try { record.release() } catch (_: Throwable) {}
+                    record = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        SAMPLE_RATE,
+                        CHANNEL_CONFIG,
+                        AUDIO_FORMAT,
+                        bufferSize
+                    )
+                    if (record.state != AudioRecord.STATE_INITIALIZED) {
+                        try { record.release() } catch (_: Throwable) {}
+                        onError("Failed to initialize AudioRecord with 16kHz PCM")
+                        return
                     }
                 }
+
+                record.startRecording()
+                audioRecord = record
+                isRecordingActive = true
+                _isRecording.value = true
+                vad.reset()
+
+                recordingJob = coroutineScope.launch(Dispatchers.IO) {
+                    val pcmBuffer = ByteArray(BYTES_PER_FRAME)
+                    val utteranceStream = ByteArrayOutputStream()
+                    var speechCaptured = false
+
+                    try {
+                        while (isActive && isRecordingActive) {
+                            val currentRecord = synchronized(lock) { audioRecord } ?: break
+                            if (currentRecord.recordingState != AudioRecord.RECORDSTATE_RECORDING) break
+
+                            val readBytes = try {
+                                currentRecord.read(pcmBuffer, 0, BYTES_PER_FRAME)
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "Exception during AudioRecord.read", t)
+                                -1
+                            }
+
+                            if (readBytes > 0) {
+                                val status = vad.processFrame(pcmBuffer, readBytes)
+                                _vadStatus.value = status
+
+                                // Calculate normalized amplitude for UI visualizer
+                                var maxSample = 0
+                                for (i in 0 until readBytes / 2) {
+                                    val sample = Math.abs((pcmBuffer[i * 2 + 1].toInt() shl 8) or (pcmBuffer[i * 2].toInt() and 0xFF))
+                                    if (sample > maxSample) maxSample = sample
+                                }
+                                _audioAmplitude.value = (maxSample / 32767f).coerceIn(0f, 1f)
+
+                                when (status) {
+                                    VadStatus.SPEECH_ACTIVE -> {
+                                        speechCaptured = true
+                                        utteranceStream.write(pcmBuffer, 0, readBytes)
+                                    }
+                                    VadStatus.SPEECH_ENDED -> {
+                                        if (speechCaptured && utteranceStream.size() > 0) {
+                                            val rawPcm = utteranceStream.toByteArray()
+                                            val wavBytes = WavEncoder.encodeToWav(rawPcm, SAMPLE_RATE)
+                                            withContext(Dispatchers.Main) {
+                                                onUtteranceComplete(wavBytes)
+                                            }
+                                        }
+                                        stopRecording()
+                                        break
+                                    }
+                                    VadStatus.CALIBRATING, VadStatus.SILENCE -> {
+                                        if (speechCaptured) {
+                                            utteranceStream.write(pcmBuffer, 0, readBytes)
+                                        }
+                                    }
+                                }
+                            } else if (readBytes < 0) {
+                                Log.w(TAG, "AudioRecord read error code: $readBytes")
+                                break
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "Audio recording loop error", t)
+                    } finally {
+                        try { utteranceStream.close() } catch (_: Throwable) {}
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Exception starting audio recorder", e)
+                onError(e.localizedMessage ?: "Audio recording failure")
+                stopRecordingInternal()
             }
-        } catch (e: Exception) {
-            Log.e("AudioRecorder", "Exception starting audio recorder", e)
-            onError(e.localizedMessage ?: "Audio recording failure")
-            stopRecording()
         }
     }
 
-    fun stopRecording(): ByteArray? {
+    private fun stopRecordingInternal(): ByteArray? {
+        isRecordingActive = false
         _isRecording.value = false
         _vadStatus.value = VadStatus.SILENCE
         _audioAmplitude.value = 0f
 
-        recordingJob?.cancel()
+        val job = recordingJob
         recordingJob = null
+        job?.cancel()
 
         try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (e: Exception) {
-            Log.e("AudioRecorder", "Error stopping AudioRecord", e)
+            audioRecord?.let { record ->
+                if (record.state == AudioRecord.STATE_INITIALIZED) {
+                    if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        try { record.stop() } catch (_: Throwable) {}
+                    }
+                    try { record.release() } catch (_: Throwable) {}
+                }
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error stopping AudioRecord", t)
         } finally {
             audioRecord = null
         }
         return null
     }
 
+    fun stopRecording(): ByteArray? {
+        synchronized(lock) {
+            return stopRecordingInternal()
+        }
+    }
+
     fun release() {
         stopRecording()
-        coroutineScope.cancel()
+        try {
+            coroutineScope.cancel()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Error cancelling coroutineScope", t)
+        }
     }
 }

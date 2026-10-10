@@ -1,9 +1,7 @@
 package com.sarvaai.app
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -20,29 +18,31 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.sarvaai.app.audio.haptics.HapticFeedbackEngine
 import com.sarvaai.app.audio.haptics.HapticPattern
 import com.sarvaai.app.audio.recorder.AudioRecorder
 import com.sarvaai.app.audio.vad.VadStatus
 import com.sarvaai.app.bhashini.asr.AsrNmtClient
-import com.sarvaai.app.bhashini.auth.BhashiniConfigManager
 import com.sarvaai.app.bhashini.matrix.CapabilityMatrix
 import com.sarvaai.app.bhashini.models.IngestionResult
 import com.sarvaai.app.core.result.Result
@@ -82,9 +82,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (::audioRecorder.isInitialized) {
+            audioRecorder.stopRecording()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (::audioRecorder.isInitialized) {
+            audioRecorder.stopRecording()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        audioRecorder.release()
+        if (::audioRecorder.isInitialized) {
+            audioRecorder.release()
+        }
     }
 }
 
@@ -168,7 +184,7 @@ fun MainAudioIngestionScreen(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
+                            .height(54.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (isSelected) SaffronPrimary else CharcoalSurfaceVariant)
                             .border(
@@ -177,8 +193,14 @@ fun MainAudioIngestionScreen(
                                 RoundedCornerShape(12.dp)
                             )
                             .clickable {
+                                if (isRecording) {
+                                    audioRecorder.stopRecording()
+                                }
                                 selectedLanguage = lang.code
                                 hapticEngine.trigger(HapticPattern.CLICK)
+                            }
+                            .semantics {
+                                contentDescription = "${lang.nameEnglish} language (${lang.nameNative})"
                             }
                     ) {
                         Text(
@@ -248,10 +270,13 @@ fun MainAudioIngestionScreen(
                             hapticEngine.trigger(HapticPattern.CLICK)
                         }
                     }
+                    .semantics {
+                        contentDescription = if (isRecording) "Stop voice recording" else "Start voice recording in ${selectedLanguage.uppercase()}"
+                    }
             ) {
                 Icon(
                     imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                    contentDescription = if (isRecording) "Stop Recording" else "Start Speaking",
+                    contentDescription = null,
                     tint = PureWhite,
                     modifier = Modifier.size(48.dp)
                 )
@@ -262,11 +287,11 @@ fun MainAudioIngestionScreen(
             // VAD Status & Live Audio Amplitude
             Text(
                 text = when {
-                    isProcessing -> "Processing with Bhashini ASR + NMT..."
+                    isProcessing -> "Processing with Bhashini AI..."
                     isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> "Speech Active (Listening...)"
                     isRecording && vadStatus == VadStatus.CALIBRATING -> "Calibrating ambient noise..."
                     isRecording -> "Listening for voice (VAD active)..."
-                    else -> "Tap microphone to speak"
+                    else -> "Tap microphone to speak (${selectedLanguage.uppercase()})"
                 },
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -293,20 +318,29 @@ fun MainAudioIngestionScreen(
                 AccessibleCard(
                     borderColor = if (errorMessage != null) NonVegRed else SaffronPrimary
                 ) {
-                    Text(
-                        text = "Bhashini Ingestion Output",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.semantics { heading() }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            tint = SaffronPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Bhashini Ingestion Output",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.semantics { heading() }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     if (isProcessing) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = SaffronPrimary)
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(text = "Transcribing & translating...", fontSize = 14.sp, color = MutedText)
+                            Text(text = "Transcribing & translating audio...", fontSize = 14.sp, color = MutedText)
                         }
                     }
 
@@ -320,9 +354,13 @@ fun MainAudioIngestionScreen(
                     }
 
                     ingestionResult?.let { res ->
+                        val isEnglishInput = res.sourceLanguage == "en"
+
+                        // 1. Customer Recognized Transcript
                         Text(
-                            text = "Native Transcript (${res.sourceLanguage.uppercase()}):",
+                            text = if (isEnglishInput) "Recognized English Speech:" else "Native Speech (${res.sourceLanguage.uppercase()}):",
                             fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
                             color = SubtitleText
                         )
                         Text(
@@ -332,23 +370,78 @@ fun MainAudioIngestionScreen(
                             color = PureWhite
                         )
 
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (isEnglishInput) {
+                            // Direct English pipeline explanation & Staff translation
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = VegGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "AI Intent Engine: Direct English (0ms NMT Latency)",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = VegGreen
+                                )
+                            }
+
+                            if (!res.staffTranslation.isNullOrEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Restaurant,
+                                        contentDescription = null,
+                                        tint = SaffronPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Staff / Kitchen Preview (${res.staffTargetLanguage ?: "Hindi"}):",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = SubtitleText
+                                    )
+                                }
+                                Text(
+                                    text = res.staffTranslation,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = SaffronPrimary
+                                )
+                            }
+                        } else {
+                            // Non-English: Show English Translation for unified ordering
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.SwapHoriz,
+                                    contentDescription = null,
+                                    tint = SaffronPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Unified Order Translation (English):",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = SubtitleText
+                                )
+                            }
+                            Text(
+                                text = if (res.englishTranslation.isNotEmpty()) res.englishTranslation else "(Empty)",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = SaffronPrimary
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(10.dp))
-
                         Text(
-                            text = "English NMT Translation:",
-                            fontSize = 13.sp,
-                            color = SubtitleText
-                        )
-                        Text(
-                            text = if (res.englishTranslation.isNotEmpty()) res.englishTranslation else "(Empty)",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = SaffronPrimary
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Latency: ${res.latencyMs} ms",
+                            text = "Pipeline Latency: ${res.latencyMs} ms",
                             fontSize = 12.sp,
                             color = MutedText
                         )

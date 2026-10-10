@@ -161,5 +161,7 @@ data class IngestionResult(
     val englishTranslation: String,
     val sourceLanguage: String,
     val latencyMs: Long = 0L,
-    val confidence: Double = 1.0
+    val confidence: Double = 1.0,
+    val staffTranslation: String? = null,
+    val staffTargetLanguage: String? = null
 )

@@ -27,16 +27,23 @@ class AsrNmtClient(
         // Master JWT Access Token for AnuvaadHub Sandbox
         const val DEFAULT_ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNmFjYTM2MmE2YWQ0MDM3OTU1Y2Q4YmVhIiwicm9sZSI6Im1lZ2F0aG9uX3N0dWRlbnQiLCJleHAiOjE3OTE4NjU4MDB9.MvE-w5j4jErD7lHlYpd8ibEe8F4Dj4HJHNLtGtkXR2k"
 
-        // Dedicated AnuvaadHub Model Endpoints
+        // Dedicated AnuvaadHub ASR Model Endpoints
         private val ASR_ENDPOINTS = mapOf(
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603533", // AI4Bharat-ASR-Hindi
             "te" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e60353b", // AI4Bharat-ASR-Telugu
             "en" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603531"  // AI4Bharat-ASR-English
         )
 
+        // Native -> English MT Endpoints (for unified LLM reasoning)
         private val MT_TO_EN_ENDPOINTS = mapOf(
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316384a", // IIITH-Bhashaverse-Hindi-English
             "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb923163869"  // IIITH-Bhashaverse-Telugu-English
+        )
+
+        // English -> Native Staff MT Endpoints (for restaurant staff/kitchen bridge)
+        private val MT_EN_TO_STAFF_ENDPOINTS = mapOf(
+            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316383c", // IIITH-Bhashaverse-English-Hindi
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316389a"  // IIITH-Bhashaverse-English-Telugu
         )
     }
 
@@ -97,9 +104,13 @@ class AsrNmtClient(
             )
         }
 
-        // 3. Translation to English (if language is not English)
+        // 3. Translation Handling
         var englishTranslation = transcript
+        var staffTranslation: String? = null
+        var staffTargetLanguage: String? = null
+
         if (lang != "en") {
+            // Non-English: Translate to English for unified AI processing
             val mtUrl = MT_TO_EN_ENDPOINTS[lang]
             if (mtUrl != null) {
                 try {
@@ -125,17 +136,46 @@ class AsrNmtClient(
                     Log.w(TAG, "MT request failed, falling back to original transcript", e)
                 }
             }
+        } else {
+            // English mode: English goes directly to LLM dialog engine (0ms NMT latency).
+            // Concurrently generate staff translation (English -> Hindi) for waiter / kitchen assistive display
+            val staffMtUrl = MT_EN_TO_STAFF_ENDPOINTS["hi"]
+            if (staffMtUrl != null) {
+                try {
+                    val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = transcript))
+                    val mtRequest = Request.Builder()
+                        .url(staffMtUrl)
+                        .header("access-token", token)
+                        .post(mtPayload.toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val mtResponse = okHttpClient.newCall(mtRequest).execute()
+                    val mtBody = mtResponse.body?.string()
+                    if (mtResponse.isSuccessful && !mtBody.isNullOrEmpty()) {
+                        val parsedMt = json.decodeFromString<AnuvaadHubMtResponse>(mtBody)
+                        val translatedText = parsedMt.data?.outputText?.trim()
+                        if (!translatedText.isNullOrEmpty()) {
+                            staffTranslation = translatedText
+                            staffTargetLanguage = "Hindi"
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Staff MT translation failed gracefully", e)
+                }
+            }
         }
 
         val totalLatency = System.currentTimeMillis() - startTime
-        Log.i(TAG, "Ingestion Complete in ${totalLatency}ms: Native='$transcript' | English='$englishTranslation'")
+        Log.i(TAG, "Ingestion Complete in ${totalLatency}ms: Native='$transcript' | English='$englishTranslation' | Staff='$staffTranslation'")
 
         Result.Success(
             IngestionResult(
                 originalTranscript = transcript,
                 englishTranslation = englishTranslation,
                 sourceLanguage = lang,
-                latencyMs = totalLatency
+                latencyMs = totalLatency,
+                staffTranslation = staffTranslation,
+                staffTargetLanguage = staffTargetLanguage
             )
         )
     }
