@@ -19,19 +19,15 @@ object LayoutNarrator {
         return when (language.lowercase()) {
             "hi" -> {
                 val sectionNames = sections.joinToString(", ") { it.titleNative ?: it.titleEnglish }
-                "$restaurantName के मेनू में $totalSections भाग और कुल $totalItems व्यंजन हैं, जिनमें $vegItems शाकाहारी हैं। " +
-                        "भाग हैं: $sectionNames। आप किसी भी भाग को सुनने के लिए 'अगला' बोल सकते हैं।"
+                "$restaurantName मेनू में $totalSections श्रेणियां और $totalItems व्यंजन हैं। श्रेणियां: $sectionNames।"
             }
             "te" -> {
                 val sectionNames = sections.joinToString(", ") { it.titleNative ?: it.titleEnglish }
-                "$restaurantName మెనూలో $totalSections విభాగాలు మరియు మొత్తం $totalItems వంటకాలు ఉన్నాయి. " +
-                        "ఇందులో $vegItems శాఖాహార వంటకాలు ఉన్నాయి. " +
-                        "విభాగాలు: $sectionNames. వినడానికి 'తర్వాత' అని చెప్పండి."
+                "$restaurantName మెనూలో $totalSections విభాగాలు మరియు $totalItems వంటకాలు ఉన్నాయి. విభాగాలు: $sectionNames."
             }
             else -> {
                 val sectionNames = sections.joinToString(", ") { it.titleEnglish }
-                "This menu for $restaurantName has $totalSections sections with $totalItems items, including $vegItems vegetarian options. " +
-                        "The sections are: $sectionNames. You can say 'next' to browse dishes or say a section name."
+                "$restaurantName menu has $totalSections sections with $totalItems items. Sections: $sectionNames."
             }
         }
     }

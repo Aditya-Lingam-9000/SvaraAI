@@ -2,6 +2,7 @@ package com.sarvaai.app
 
 import android.Manifest
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -85,10 +86,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var groqClient: GroqClient
     private lateinit var menuExtractor: MenuExtractor
     private var activeSpeechJob: Job? = null
+    private var androidTts: android.speech.tts.TextToSpeech? = null
 
     private fun stopGlobalSpeech() {
         activeSpeechJob?.cancel()
         activeSpeechJob = null
+        try {
+            androidTts?.stop()
+        } catch (e: Exception) {}
         if (::speechPlayer.isInitialized) {
             speechPlayer.stop()
         }
@@ -108,6 +113,16 @@ class MainActivity : ComponentActivity() {
         speechPlayer = SpeechPlayer(this)
         groqClient = GroqClient(this)
         menuExtractor = MenuExtractor(this, database.menuDao())
+
+        try {
+            androidTts = android.speech.tts.TextToSpeech(this) { status ->
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    androidTts?.language = java.util.Locale("hi", "IN")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Native TTS init: ${e.message}")
+        }
 
         setContent {
             var isHighContrast by remember { mutableStateOf(false) }
@@ -137,13 +152,33 @@ class MainActivity : ComponentActivity() {
                     for ((index, chunk) in chunks.withIndex()) {
                         if (!isActive) break
                         if (chunk.isBlank() || !chunk.any { it.isLetterOrDigit() }) continue
-                        val res = ttsClient.synthesizeSpeech(chunk, lang)
-                        if (!isActive) break
-                        if (res is Result.Success) {
-                            val audioFile = res.data.audioFile
-                            if (audioFile != null && isActive) {
-                                speechPlayer.enqueueAudioFile(audioFile, clearQueue = (index == 0))
+
+                        var audioPlayed = false
+                        try {
+                            val res = kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                                ttsClient.synthesizeSpeech(chunk, lang)
                             }
+                            if (!isActive) break
+                            if (res is Result.Success) {
+                                val audioFile = res.data.audioFile
+                                if (audioFile != null && isActive) {
+                                    speechPlayer.enqueueAudioFile(audioFile, clearQueue = (index == 0))
+                                    audioPlayed = true
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("MainActivity", "Bhashini TTS timed out/failed: ${e.message}")
+                        }
+
+                        if (!audioPlayed && isActive) {
+                            // Instant local native TTS fallback
+                            val loc = when (lang.lowercase()) {
+                                "te" -> java.util.Locale("te", "IN")
+                                "hi" -> java.util.Locale("hi", "IN")
+                                else -> java.util.Locale.ENGLISH
+                            }
+                            androidTts?.language = loc
+                            androidTts?.speak(chunk, android.speech.tts.TextToSpeech.QUEUE_ADD, null, "chunk_$index")
                         }
                     }
                 }
@@ -264,6 +299,9 @@ class MainActivity : ComponentActivity() {
         if (::speechPlayer.isInitialized) {
             speechPlayer.release()
         }
+        try {
+            androidTts?.shutdown()
+        } catch (e: Exception) {}
     }
 }
 

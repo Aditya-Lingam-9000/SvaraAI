@@ -62,18 +62,33 @@ class MenuExtractor(
             // Explicitly requested sample menu loader
             extractedDto = getRealisticFallbackMenu()
         } else {
-            // 1. Try Groq LLaMA 3.2 Vision if API key is present
-            if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your")) {
-                extractedDto = extractWithGroqVision(jpegBytes, apiKey)
+            // STAGE 1: High-Accuracy Verbatim OCR Extraction
+            val rawOcrText = performRawOcr(jpegBytes)
+            Log.i(TAG, "Stage 1 OCR extracted ${rawOcrText.lines().size} raw lines: ${rawOcrText.take(150)}...")
+
+            // STAGE 2: If API key present and OCR found text, structure with high-speed LLM Reasoner
+            if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your") && rawOcrText.length >= 15) {
+                extractedDto = structureOcrWithLlm(rawOcrText, apiKey)
+                if (extractedDto != null && extractedDto.sections.isNotEmpty()) {
+                    Log.i(TAG, "Stage 2 LLM structuring successful: ${extractedDto.sections.size} sections, ${extractedDto.sections.sumOf { it.items.size }} items")
+                }
             }
 
-            // 2. Fallback to Local ML Kit OCR
+            // STAGE 3: If OCR text was sparse or LLM structuring missed, try Direct Multimodal Vision
             if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
-                Log.i(TAG, "Using Local ML Kit OCR Engine for menu extraction")
+                if (apiKey.isNotEmpty() && !apiKey.startsWith("gsk_your")) {
+                    Log.i(TAG, "Trying Direct Multimodal Vision with qwen/qwen3.8-27b")
+                    extractedDto = extractWithGroqVision(jpegBytes, apiKey)
+                }
+            }
+
+            // STAGE 4: Fallback to Local ML Kit Parser if offline/network error
+            if (extractedDto == null || extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
+                Log.i(TAG, "Using Local ML Kit OCR Engine fallback for menu extraction")
                 extractedDto = extractWithLocalOcr(jpegBytes)
             }
 
-            // 3. If STILL no food items found in the photo, return error
+            // If STILL no food items found in the photo, return error
             if (extractedDto.sections.isEmpty() || extractedDto.sections.all { it.items.isEmpty() }) {
                 return@withContext Result.Error(
                     when (context.resources.configuration.locales[0].language) {
@@ -144,6 +159,182 @@ class MenuExtractor(
                 items = itemEntities
             )
         )
+    }
+
+    private suspend fun performRawOcr(jpegBytes: ByteArray): String = suspendCancellableCoroutine { cont ->
+        if (jpegBytes.isEmpty()) {
+            cont.resume("")
+            return@suspendCancellableCoroutine
+        }
+
+        var rotationDegrees = 0
+        try {
+            val exif = ExifInterface(ByteArrayInputStream(jpegBytes))
+            val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            rotationDegrees = when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "EXIF rotation read failed: ${e.message}")
+        }
+
+        val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+        if (bitmap == null) {
+            cont.resume("")
+            return@suspendCancellableCoroutine
+        }
+
+        val image = InputImage.fromBitmap(bitmap, rotationDegrees)
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val textBlocks = visionText.textBlocks
+                if (textBlocks.isEmpty()) {
+                    cont.resume("")
+                    return@addOnSuccessListener
+                }
+
+                val sortedLines = textBlocks.flatMap { it.lines }
+                    .sortedWith(compareBy({ it.boundingBox?.top ?: 0 }, { it.boundingBox?.left ?: 0 }))
+                    .map { it.text.trim() }
+                    .filter { it.isNotBlank() }
+
+                cont.resume(sortedLines.joinToString("\n"))
+            }
+            .addOnFailureListener {
+                cont.resume("")
+            }
+    }
+
+    private fun structureOcrWithLlm(rawOcrText: String, apiKey: String): ExtractedMenuDto? {
+        return try {
+            val systemPrompt = """
+            You are an expert restaurant menu transcription and classification assistant.
+            You are given verbatim OCR text extracted from a restaurant menu card.
+            Organize it accurately into structured JSON:
+            1. "restaurantName": The restaurant name if present in the text (otherwise "Restaurant Menu").
+            2. "sections": Group every item under its exact category heading/section as in the text (e.g. "Tiffins & Dosas", "Starters", "Main Course", "Rice & Biryani", "Beverages", "Desserts", "Chinese", etc.).
+            3. "items": For each dish/beverage, extract:
+               - "name": The exact item name as in the OCR text.
+               - "price": The exact numerical price in whole rupees (INR) associated with this item (e.g., if "₹90/-" or "90", price is 90; do NOT invent prices).
+               - "isVegetarian": Boolean (true if vegetarian/beverage, false if meat/chicken/fish/egg).
+               - "isJain": Boolean (true if vegetarian and no onion/garlic/potatoes).
+               - "isVegan": Boolean (true if plant-based without dairy/paneer/ghee).
+               - "isNutFree": Boolean (true if no cashew/peanuts).
+               - "spiceLevel": 0 (Mild), 1 (Medium), 2 (Spicy), 3 (Very Spicy).
+               - "description": Short description or empty string.
+
+            If the text has no food menu items, return: {"restaurantName": "", "sections": []}.
+
+            Return strictly valid JSON matching this schema:
+            {
+              "restaurantName": "Restaurant Name",
+              "sections": [
+                {
+                  "sectionName": "Exact Section Heading",
+                  "items": [
+                    {
+                      "name": "Dish Name",
+                      "price": 120,
+                      "isVegetarian": true,
+                      "isJain": false,
+                      "isVegan": false,
+                      "isNutFree": true,
+                      "spiceLevel": 1,
+                      "description": "Short description"
+                    }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent()
+
+            val encodedSystemPrompt = json.encodeToString(kotlinx.serialization.serializer<String>(), systemPrompt)
+            val encodedUserContent = json.encodeToString(kotlinx.serialization.serializer<String>(), "Here is the raw OCR text from the menu:\n\n$rawOcrText")
+
+            val payload = """
+            {
+              "model": "openai/gpt-oss-20b",
+              "messages": [
+                { "role": "system", "content": $encodedSystemPrompt },
+                { "role": "user", "content": $encodedUserContent }
+              ],
+              "temperature": 0.1,
+              "response_format": { "type": "json_object" }
+            }
+            """.trimIndent()
+
+            val request = Request.Builder()
+                .url(GROQ_VISION_URL)
+                .header("Authorization", "Bearer $apiKey")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "SarvaAI/1.0")
+                .post(payload.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            val body = response.body?.string()
+
+            if (response.isSuccessful && !body.isNullOrEmpty()) {
+                val rootJson = json.parseToJsonElement(body).jsonObject
+                val rawContent = rootJson["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+                    ?.get("message")?.jsonObject
+                    ?.get("content")?.jsonPrimitive?.content ?: ""
+
+                val cleanJson = rawContent
+                    .replace(Regex("^```(?:json)?", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("```$", RegexOption.IGNORE_CASE), "")
+                    .trim()
+
+                if (cleanJson.isNotBlank()) {
+                    val parsedDto = json.decodeFromString<ExtractedMenuDto>(cleanJson)
+                    val validSections = parsedDto.sections.mapNotNull { sec ->
+                        val validItems = sec.items.mapNotNull { item ->
+                            if (item.name.isBlank() || item.name.length < 2) null
+                            else {
+                                val isNonVeg = item.name.contains("chicken", ignoreCase = true) ||
+                                        item.name.contains("mutton", ignoreCase = true) ||
+                                        item.name.contains("egg", ignoreCase = true) ||
+                                        item.name.contains("fish", ignoreCase = true) ||
+                                        item.name.contains("prawn", ignoreCase = true) ||
+                                        item.name.contains("lamb", ignoreCase = true) ||
+                                        item.name.contains("pork", ignoreCase = true) ||
+                                        item.name.contains("beef", ignoreCase = true) ||
+                                        item.name.contains("seafood", ignoreCase = true)
+
+                                val isVeg = if (isNonVeg) false else item.isVegetarian
+                                val isJain = isVeg && !item.name.contains("onion", ignoreCase = true) && !item.name.contains("garlic", ignoreCase = true) && !item.name.contains("potato", ignoreCase = true) && !item.name.contains("aloo", ignoreCase = true)
+                                val spice = if (item.name.contains("spicy", ignoreCase = true) || item.name.contains("chilli", ignoreCase = true) || item.name.contains("masala", ignoreCase = true) || item.name.contains("schezwan", ignoreCase = true)) maxOf(item.spiceLevel, 2) else item.spiceLevel
+                                item.copy(
+                                    name = item.name.trim(),
+                                    price = if (item.price > 0) item.price else 100L,
+                                    isVegetarian = isVeg,
+                                    isJain = isJain,
+                                    spiceLevel = spice
+                                )
+                            }
+                        }
+                        if (validItems.isNotEmpty()) sec.copy(items = validItems) else null
+                    }
+                    if (validSections.isNotEmpty()) {
+                        return parsedDto.copy(
+                            restaurantName = parsedDto.restaurantName.ifBlank { "Restaurant Menu" },
+                            sections = validSections
+                        )
+                    }
+                }
+            } else {
+                Log.w(TAG, "Groq LLM OCR Structuring HTTP ${response.code}: $body")
+            }
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "Groq LLM OCR Structuring exception: ${e.message}", e)
+            null
+        }
     }
 
     private fun extractWithGroqVision(jpegBytes: ByteArray, apiKey: String): ExtractedMenuDto? {
