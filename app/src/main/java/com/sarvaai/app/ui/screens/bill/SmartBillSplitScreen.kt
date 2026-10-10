@@ -46,7 +46,6 @@ import com.sarvaai.app.llm.models.StructuredAiResponse
 import com.sarvaai.app.service.bill.BillCalculator
 import com.sarvaai.app.service.bill.BillSpeechNarrator
 import com.sarvaai.app.service.bill.DinerShare
-import com.sarvaai.app.service.upi.UpiIntentGenerator
 import com.sarvaai.app.ui.components.AccessibleButton
 import com.sarvaai.app.ui.components.LiveCaptionBar
 import com.sarvaai.app.ui.theme.*
@@ -85,8 +84,6 @@ fun SmartBillSplitScreen(
     var splitMode by remember { mutableStateOf("EQUAL") } // "EQUAL" or "ITEM"
     var selectedPersonForAssignment by remember { mutableStateOf(1) }
     var itemAssignments by remember { mutableStateOf<Map<Int, List<String>>>(emptyMap()) }
-    var showQrModal by remember { mutableStateOf<DinerShare?>(null) }
-    var showFullBillQrModal by remember { mutableStateOf(false) }
     var showManualAddDialog by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
@@ -223,20 +220,6 @@ fun SmartBillSplitScreen(
         )
     }
 
-    fun launchUpiPayment(amountRupees: Double, note: String) {
-        hapticEngine.trigger(HapticPattern.CONFIRMATION)
-        earconEngine.play(EarconType.ORDER_CONFIRMED)
-        try {
-            val intent = UpiIntentGenerator.buildUpiIntent(
-                amountRupees = amountRupees,
-                transactionNote = note
-            )
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(context, "No UPI app found. You can copy the UPI URI.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     Surface(
         modifier = modifier.fillMaxSize(),
         color = CharcoalBackground
@@ -258,7 +241,7 @@ fun SmartBillSplitScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Smart Bill & UPI Split (Phase 11)",
+                            text = "Smart Bill & Tax Splitter",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = SaffronPrimary,
@@ -704,41 +687,6 @@ fun SmartBillSplitScreen(
                                         ) {
                                             Icon(imageVector = Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Hear share", tint = PureWhite, modifier = Modifier.size(16.dp))
                                         }
-
-                                        // Show QR / Table Pay
-                                        IconButton(
-                                            onClick = {
-                                                hapticEngine.trigger(HapticPattern.CLICK)
-                                                showQrModal = share
-                                            },
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .background(CharcoalSurfaceVariant, CircleShape)
-                                        ) {
-                                            Icon(imageVector = Icons.Default.QrCode, contentDescription = "Show QR code", tint = HighContrastYellow, modifier = Modifier.size(16.dp))
-                                        }
-
-                                        // Direct UPI App Payment
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .height(34.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(SaffronPrimary)
-                                                .clickable {
-                                                    launchUpiPayment(
-                                                        amountRupees = share.shareRupees.toDouble(),
-                                                        note = "${share.label} Bill Share"
-                                                    )
-                                                }
-                                                .padding(horizontal = 10.dp)
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(imageVector = Icons.Default.Payment, contentDescription = null, tint = SaffronOnPrimary, modifier = Modifier.size(14.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(text = "Pay UPI", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SaffronOnPrimary)
-                                            }
-                                        }
                                     }
                                 }
                             }
@@ -748,7 +696,7 @@ fun SmartBillSplitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // BOTTOM CONTROLS: MIC BUTTON + TABLE QR + PAY FULL BILL
+                // BOTTOM CONTROLS: MIC BUTTON + READ BILL + DONE
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -785,24 +733,25 @@ fun SmartBillSplitScreen(
                     }
 
                     AccessibleButton(
-                        text = "🔲 Table QR",
+                        text = "🔊 Read Out Bill",
                         onClick = {
                             hapticEngine.trigger(HapticPattern.CLICK)
-                            showFullBillQrModal = true
+                            val summary = BillSpeechNarrator.narrateBillSummary(billBreakdown, selectedLanguage)
+                            onSpeakNarration(summary)
                         },
                         modifier = Modifier.weight(1f),
                         isPrimary = false
                     )
 
                     AccessibleButton(
-                        text = "📱 Pay Full (₹${billBreakdown.totalRupees})",
+                        text = "Done (₹${billBreakdown.totalRupees})",
                         onClick = {
-                            launchUpiPayment(
-                                amountRupees = billBreakdown.totalRupees.toDouble(),
-                                note = "Full Dining Bill at $restaurantName"
-                            )
+                            hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                            earconEngine.play(EarconType.ORDER_CONFIRMED)
+                            onStopNarration()
+                            onClose()
                         },
-                        modifier = Modifier.weight(1.5f),
+                        modifier = Modifier.weight(1.2f),
                         isPrimary = true
                     )
                 }
@@ -866,109 +815,6 @@ fun SmartBillSplitScreen(
                     dismissButton = {
                         TextButton(onClick = { showManualAddDialog = false }) {
                             Text(text = "Cancel", color = PureWhite)
-                        }
-                    }
-                )
-            }
-
-            // QR Modal for Individual Diner Share
-            showQrModal?.let { share ->
-                val upiUri = UpiIntentGenerator.buildUpiUriString(
-                    amountRupees = share.shareRupees.toDouble(),
-                    transactionNote = "${share.label} Share"
-                )
-                AlertDialog(
-                    onDismissRequest = { showQrModal = null },
-                    containerColor = CharcoalSurface,
-                    title = {
-                        Text(text = "📱 ${share.label} UPI Payment", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = SaffronPrimary)
-                    },
-                    text = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "Exact Share: ₹${share.shareRupees}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = VegGreen)
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(text = "VPA: ${UpiIntentGenerator.DEFAULT_RESTAURANT_VPA}", fontSize = 12.sp, color = SubtitleText)
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.Black, RoundedCornerShape(8.dp))
-                                    .padding(10.dp)
-                            ) {
-                                Text(
-                                    text = upiUri,
-                                    fontSize = 11.sp,
-                                    color = HighContrastYellow,
-                                    lineHeight = 14.sp
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        AccessibleButton(
-                            text = "Open UPI App",
-                            onClick = {
-                                launchUpiPayment(share.shareRupees.toDouble(), "${share.label} Share")
-                                showQrModal = null
-                            },
-                            isPrimary = true
-                        )
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showQrModal = null }) {
-                            Text(text = "Close", color = PureWhite)
-                        }
-                    }
-                )
-            }
-
-            // QR Modal for Full Table Bill
-            if (showFullBillQrModal) {
-                val fullUpiUri = UpiIntentGenerator.buildUpiUriString(
-                    amountRupees = billBreakdown.totalRupees.toDouble(),
-                    transactionNote = "Table Bill at $restaurantName"
-                )
-                AlertDialog(
-                    onDismissRequest = { showFullBillQrModal = false },
-                    containerColor = CharcoalSurface,
-                    title = {
-                        Text(text = "🧾 Table UPI Bill Payment", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = SaffronPrimary)
-                    },
-                    text = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "Grand Total: ₹${billBreakdown.totalRupees}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SaffronPrimary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(text = "Restaurant: $restaurantName", fontSize = 13.sp, color = PureWhite)
-                            Text(text = "UPI VPA: ${UpiIntentGenerator.DEFAULT_RESTAURANT_VPA}", fontSize = 12.sp, color = SubtitleText)
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.Black, RoundedCornerShape(8.dp))
-                                    .padding(10.dp)
-                            ) {
-                                Text(
-                                    text = fullUpiUri,
-                                    fontSize = 11.sp,
-                                    color = HighContrastYellow,
-                                    lineHeight = 14.sp
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        AccessibleButton(
-                            text = "Launch UPI App",
-                            onClick = {
-                                launchUpiPayment(billBreakdown.totalRupees.toDouble(), "Table Bill")
-                                showFullBillQrModal = false
-                            },
-                            isPrimary = true
-                        )
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showFullBillQrModal = false }) {
-                            Text(text = "Close", color = PureWhite)
                         }
                     }
                 )

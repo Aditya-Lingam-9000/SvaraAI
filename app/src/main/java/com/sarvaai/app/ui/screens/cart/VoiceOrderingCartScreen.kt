@@ -561,7 +561,7 @@ fun VoiceOrderingCartScreen(
                             // Smart Bill Splitter Button
                             Spacer(modifier = Modifier.height(10.dp))
                             AccessibleButton(
-                                text = "💳 Split & Pay Bill via UPI (P11)",
+                                text = "💳 Split Bill & Calculate Taxes",
                                 onClick = {
                                     hapticEngine.trigger(HapticPattern.CLICK)
                                     onStopNarration()
@@ -690,7 +690,7 @@ fun VoiceOrderingCartScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Your food is being prepared in the kitchen. You can now split the bill or pay via UPI!",
+                                text = "Your food is being prepared in the kitchen. You can now split the bill and calculate taxes!",
                                 fontSize = 12.sp,
                                 color = SubtitleText
                             )
@@ -698,7 +698,7 @@ fun VoiceOrderingCartScreen(
                     },
                     confirmButton = {
                         AccessibleButton(
-                            text = "💳 Split & Pay via UPI (P11)",
+                            text = "💳 Split Bill & Taxes",
                             onClick = {
                                 confirmedOrderModal = null
                                 onOpenBillSplit()

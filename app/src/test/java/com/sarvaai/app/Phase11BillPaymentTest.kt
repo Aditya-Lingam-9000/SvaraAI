@@ -3,7 +3,6 @@ package com.sarvaai.app
 import com.sarvaai.app.data.entities.CartItemEntity
 import com.sarvaai.app.service.bill.BillCalculator
 import com.sarvaai.app.service.bill.BillSpeechNarrator
-import com.sarvaai.app.service.upi.UpiIntentGenerator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,22 +87,5 @@ class Phase11BillPaymentTest {
 
         val speechHi = BillSpeechNarrator.narrateEqualSplit(1050L, 350L, 3, "hi")
         assertTrue(speechHi.contains("कुल बिल") && speechHi.contains("हिस्सा"))
-    }
-
-    @Test
-    fun testUpiUriAndIntentGeneration() {
-        val uriString = UpiIntentGenerator.buildUpiUriString(
-            payeeVpa = "sarvaai@okhdfcbank",
-            payeeName = "Sarva Bhavan",
-            amountRupees = 350.00,
-            transactionNote = "Table 4 Bill Share"
-        )
-
-        assertTrue(uriString.startsWith("upi://pay?"))
-        assertTrue(uriString.contains("pa=sarvaai@okhdfcbank"))
-        assertTrue(uriString.contains("pn=Sarva+Bhavan") || uriString.contains("pn=Sarva%20Bhavan"))
-        assertTrue(uriString.contains("am=350.00"))
-        assertTrue(uriString.contains("cu=INR"))
-        assertTrue(uriString.contains("tn=Table+4+Bill+Share") || uriString.contains("tn=Table%204%20Bill%20Share"))
     }
 }
