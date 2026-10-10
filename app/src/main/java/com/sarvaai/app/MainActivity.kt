@@ -62,14 +62,18 @@ import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.llm.models.StructuredAiResponse
 import com.sarvaai.app.menu.extractor.MenuExtractor
+import com.sarvaai.app.data.entities.CartItemEntity
 import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
+import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
+import java.util.UUID
 
 enum class AppScreen {
     PLAYGROUND,
     CAMERA_CAPTURE,
     MENU_BROWSER,
+    VOICE_CART,
     RAW_VS_ACCESSIBLE
 }
 
@@ -242,7 +246,49 @@ class MainActivity : ComponentActivity() {
                             onStopNarration = { stopSpeech() },
                             onAddItemToCart = { item ->
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                lifecycleScope.launch {
+                                    val existing = database.cartDao().getCartItemsDirect().firstOrNull { it.name.equals(item.nameEnglish, ignoreCase = true) }
+                                    if (existing != null) {
+                                        database.cartDao().updateQuantity(existing.cartItemId, existing.quantity + 1)
+                                    } else {
+                                        val newItem = CartItemEntity(
+                                            cartItemId = "cart_${UUID.randomUUID().toString().take(8)}",
+                                            itemId = item.itemId,
+                                            name = item.nameEnglish,
+                                            unitPricePaise = item.pricePaise,
+                                            quantity = 1,
+                                            specialNotes = null
+                                        )
+                                        database.cartDao().insertOrUpdate(newItem)
+                                    }
+                                }
                             },
+                            onOpenCart = {
+                                stopSpeech()
+                                currentScreen = AppScreen.VOICE_CART
+                            },
+                            onClose = {
+                                stopSpeech()
+                                currentScreen = AppScreen.PLAYGROUND
+                            }
+                        )
+                    }
+
+                    AppScreen.VOICE_CART -> {
+                        VoiceOrderingCartScreen(
+                            cartDao = database.cartDao(),
+                            orderDao = database.orderDao(),
+                            menuDao = database.menuDao(),
+                            groqClient = groqClient,
+                            audioRecorder = audioRecorder,
+                            asrNmtClient = asrNmtClient,
+                            hapticEngine = hapticEngine,
+                            earconEngine = earconEngine,
+                            selectedLanguage = selectedLanguage,
+                            restaurantName = restaurantName,
+                            isAudioPlaying = isAudioPlaying,
+                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                            onStopNarration = { stopSpeech() },
                             onClose = {
                                 stopSpeech()
                                 currentScreen = AppScreen.PLAYGROUND
@@ -477,10 +523,20 @@ fun MainAudioPlaygroundScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AccessibleButton(
-                    text = "📸 Scan Menu (Vision)",
+                    text = "📸 Scan Menu (P5/6)",
                     onClick = {
                         hapticEngine.trigger(HapticPattern.CLICK)
                         onOpenScreen(AppScreen.CAMERA_CAPTURE)
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = true
+                )
+
+                AccessibleButton(
+                    text = "🛒 Voice Cart (P7)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.VOICE_CART)
                     },
                     modifier = Modifier.weight(1f),
                     isPrimary = true

@@ -52,6 +52,7 @@ fun MenuBrowserScreen(
     onSpeakNarration: (String) -> Unit,
     onStopNarration: () -> Unit = {},
     onAddItemToCart: (MenuItemEntity) -> Unit,
+    onOpenCart: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -142,18 +143,34 @@ fun MenuBrowserScreen(
                 }
             }
 
-            // Overview Narration Button (for Blind/Elderly mental map)
-            AccessibleButton(
-                text = "🎧 Hear Menu Layout Overview",
-                onClick = {
-                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                    earconEngine.play(EarconType.ORDER_CONFIRMED)
-                    val overview = LayoutNarrator.generateLayoutSummary(restaurantName, sections, itemsBySection, selectedLanguage)
-                    onSpeakNarration(overview)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                isPrimary = true
-            )
+            // Overview Narration & Cart Buttons
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AccessibleButton(
+                    text = "🎧 Hear Layout",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                        earconEngine.play(EarconType.ORDER_CONFIRMED)
+                        val overview = LayoutNarrator.generateLayoutSummary(restaurantName, sections, itemsBySection, selectedLanguage)
+                        onSpeakNarration(overview)
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = true
+                )
+
+                AccessibleButton(
+                    text = "🛒 Voice Cart (P7)",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onStopNarration()
+                        onOpenCart()
+                    },
+                    modifier = Modifier.weight(1f),
+                    isPrimary = false
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 

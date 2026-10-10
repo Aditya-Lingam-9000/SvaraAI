@@ -59,13 +59,28 @@ class GroqClient(
         private const val SYSTEM_PROMPT = """
 You are SarvaAI, a fast and empathetic voice-first multimodal restaurant ordering assistant.
 You understand customer speech in Telugu (te), Hindi (hi), and English (en) universally.
-Given the customer's transcribed speech and their language:
-1. Interpret their dining intent: ORDER_ITEMS, ASK_MENU, BILL_QUERY, CUSTOMIZATION, CONFIRM_ORDER, or GENERAL_QUERY.
-2. Extract all items, quantities, and specifications accurately without word restrictions.
-3. Generate a polite, concise spoken response in the customer's native language (Telugu if 'te', Hindi if 'hi', English if 'en').
+Given the customer's transcribed speech, active language, and current cart/menu context:
+1. Interpret customer dining intent:
+   - "ORDER_ITEMS": adding items (with quantities, customizations like "less spicy", "no onion", "extra hot", etc.)
+   - "REMOVE_ITEMS": removing or reducing items from the cart
+   - "CLEAR_CART": clearing all items
+   - "BILL_QUERY": asking for total, subtotal, tax, or bill breakdown
+   - "SPLIT_BILL": splitting bill among N people (e.g. "split among 3 people", "3 మందికి పంచండి", "3 लोगों में बांटो")
+   - "CONFIRM_ORDER": customer wants to place or finalize the order
+   - "ASK_MENU": inquiring about available dishes or specials
+   - "GENERAL_QUERY": greetings or assistance requests
+
+2. Actions to return in the "actions" array:
+   - For adding: actionType = "ADD_TO_CART", payload = "Item Name:Quantity:Customization Notes" (e.g. "Masala Dosa:2:less spicy", "Filter Coffee:1:extra hot")
+   - For removing: actionType = "REMOVE_FROM_CART", payload = "Item Name"
+   - For clearing: actionType = "CLEAR_CART", payload = "all"
+   - For splitting: actionType = "SPLIT_BILL", payload = "3" (number of people)
+   - For checkout: actionType = "CONFIRM_ORDER", payload = "confirm"
+
+3. Generate a polite, concise spoken response in the customer's active native language (Telugu if 'te', Hindi if 'hi', English if 'en').
 4. Return ONLY a valid JSON object strictly matching this schema:
 {
-  "intent": "ORDER_ITEMS" | "ASK_MENU" | "BILL_QUERY" | "CUSTOMIZATION" | "CONFIRM_ORDER" | "GENERAL_QUERY",
+  "intent": "ORDER_ITEMS" | "REMOVE_ITEMS" | "CLEAR_CART" | "BILL_QUERY" | "SPLIT_BILL" | "CONFIRM_ORDER" | "ASK_MENU" | "GENERAL_QUERY",
   "headline": "Short English summary of request",
   "spoken": "Natural, spoken audio response in customer's native language for TTS voice playback",
   "caption": "Clean text for on-screen live captions in customer's language",
@@ -74,8 +89,8 @@ Given the customer's transcribed speech and their language:
     {
       "id": "action_1",
       "label": "Action label",
-      "actionType": "ADD_TO_CART" | "NAVIGATE_SECTION" | "ASK_WAITER" | "VIEW_BILL",
-      "payload": "item_name:quantity"
+      "actionType": "ADD_TO_CART" | "REMOVE_FROM_CART" | "CLEAR_CART" | "SPLIT_BILL" | "CONFIRM_ORDER" | "NAVIGATE_SECTION" | "ASK_WAITER" | "VIEW_BILL",
+      "payload": "Item Name:Quantity:Customization Notes"
     }
   ]
 }
@@ -141,7 +156,7 @@ Given the customer's transcribed speech and their language:
 
     /**
      * Comprehensive local multilingual conversational reasoner understanding universal dining intents,
-     * items, quantities, bill queries, menu queries, and customizations in Telugu, Hindi, and English.
+     * items, quantities, bill queries, bill splitting, menu queries, and customizations in Telugu, Hindi, and English.
      */
     fun generateLocalMultilingualResponse(userSpeech: String, language: String): StructuredAiResponse {
         val s = userSpeech.trim()
@@ -151,6 +166,18 @@ Given the customer's transcribed speech and their language:
         val isHindi = language == "hi" || s.any { it in '\u0900'..'\u097F' }
 
         // Determine conversational intent
+        val isSplitQuery = lower.contains("split") || lower.contains("divide") ||
+                s.contains("విభజించండి") || s.contains("పంచండి") || s.contains("మందికి") ||
+                s.contains("बांटो") || s.contains("बांट") || s.contains("विभाजित") || s.contains("लोगों में")
+
+        val isClearCart = lower.contains("clear cart") || lower.contains("empty cart") || lower.contains("cancel all") ||
+                s.contains("క్లియర్ చేయండి") || s.contains("మొత్తం తీసేయండి") || s.contains("ఖాళీ చేయండి") ||
+                s.contains("सब हटाओ") || s.contains("खाली करो") || s.contains("रद्द करो")
+
+        val isRemoveItem = lower.contains("remove") || lower.contains("delete") || lower.contains("don't want") ||
+                s.contains("తీసేయండి") || s.contains("వద్దు") || s.contains("తీసివేయండి") ||
+                s.contains("हटाओ") || s.contains("निकालो") || s.contains("नहीं चाहिए")
+
         val isBillQuery = lower.contains("bill") || lower.contains("total") || lower.contains("check") ||
                 s.contains("బిల్లు") || s.contains("బిల్") || s.contains("ఎంత") || s.contains("ఖర్చు") ||
                 s.contains("बिल") || s.contains("कितना") || s.contains("रुपये")
@@ -163,9 +190,9 @@ Given the customer's transcribed speech and their language:
                 s.contains("కారం") || s.contains("చక్కెర") || s.contains("తక్కువ") || s.contains("ఎక్కువ") ||
                 s.contains("तीखा") || s.contains("कम") || s.contains("ज्यादा") || s.contains("चीनी")
 
-        val isConfirmation = lower.contains("confirm") || lower.contains("done") || lower.contains("place order") || lower.contains("that's all") ||
-                s.contains("ఆర్డర్ చేయండి") || s.contains("చాలు") || s.contains("పూర్తి") ||
-                s.contains("ऑर्डर कर") || s.contains("कन्फर्म") || s.contains("बस")
+        val isConfirmation = lower.contains("confirm") || lower.contains("place order") || lower.contains("that's all") || lower.contains("checkout") ||
+                s.contains("ఆర్డర్ చేయండి") || s.contains("చాలు") || s.contains("ఖరారు") ||
+                s.contains("ऑर्डर करो") || s.contains("कन्फर्म") || s.contains("पक्का करो")
 
         val isGreeting = lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ||
                 s.contains("నమస్తే") || s.contains("హలో") || s.contains("బాగున్నారా") ||
@@ -176,12 +203,14 @@ Given the customer's transcribed speech and their language:
         val spoken: String
         val actionType: String
         val actionLabel: String
+        val payload: String
 
         when {
             isGreeting -> {
                 intent = "GENERAL_QUERY"
                 actionType = "NAVIGATE_SECTION"
                 actionLabel = "Browse Menu"
+                payload = ""
                 if (isTelugu) {
                     headline = "Welcome to SarvaAI"
                     spoken = "నమస్కారం! సర్వ ఏఐ కి స్వాగతం. మీరు ఈరోజు ఏమి ఆర్డర్ చేయాలనుకుంటున్నారు?"
@@ -194,10 +223,84 @@ Given the customer's transcribed speech and their language:
                 }
             }
 
+            isSplitQuery -> {
+                intent = "SPLIT_BILL"
+                actionType = "SPLIT_BILL"
+                actionLabel = "Split Bill"
+                // Extract digit if present e.g. "split for 3" or "3 మందికి"
+                val digitMatch = Regex("(\\d+)").find(s)?.value?.toIntOrNull() ?: 2
+                val count = digitMatch.coerceIn(2, 10)
+                payload = count.toString()
+                if (isTelugu) {
+                    headline = "Split Bill for $count"
+                    spoken = "$count మందికి బిల్లు సమానంగా విభజించబడింది."
+                } else if (isHindi) {
+                    headline = "Split Bill for $count"
+                    spoken = "$count लोगों में बिल बराबर बांट दिया गया है।"
+                } else {
+                    headline = "Split Bill for $count"
+                    spoken = "Bill split evenly for $count people."
+                }
+            }
+
+            isClearCart -> {
+                intent = "CLEAR_CART"
+                actionType = "CLEAR_CART"
+                actionLabel = "Clear Cart"
+                payload = "all"
+                if (isTelugu) {
+                    headline = "Cart Cleared"
+                    spoken = "మీ కార్ట్ ఖాళీ చేయబడింది."
+                } else if (isHindi) {
+                    headline = "Cart Cleared"
+                    spoken = "आपकी कार्ट खाली कर दी गई है।"
+                } else {
+                    headline = "Cart Cleared"
+                    spoken = "Your cart has been cleared."
+                }
+            }
+
+            isRemoveItem -> {
+                intent = "REMOVE_ITEMS"
+                actionType = "REMOVE_FROM_CART"
+                actionLabel = "Remove Item"
+                // clean item name
+                val cleanedName = s.replace(Regex("(?i)remove|delete|తీసేయండి|తీసివేయండి|వద్దు|हटाओ|निकालो"), "").trim()
+                payload = if (cleanedName.isNotBlank()) cleanedName else "item"
+                if (isTelugu) {
+                    headline = "Removed: $payload"
+                    spoken = "$payload ఆర్డర్ నుండి తొలగించబడింది."
+                } else if (isHindi) {
+                    headline = "Removed: $payload"
+                    spoken = "$payload को ऑर्डर से हटा दिया गया है।"
+                } else {
+                    headline = "Removed: $payload"
+                    spoken = "Removed $payload from your order."
+                }
+            }
+
+            isConfirmation -> {
+                intent = "CONFIRM_ORDER"
+                actionType = "CONFIRM_ORDER"
+                actionLabel = "Confirm Order"
+                payload = "confirm"
+                if (isTelugu) {
+                    headline = "Order Placed"
+                    spoken = "మీ ఆర్డర్ విజయవంతంగా నమోదయింది. కిచెన్‌లో తయారు చేయబడుతోంది."
+                } else if (isHindi) {
+                    headline = "Order Placed"
+                    spoken = "आपका ऑर्डर सफलतापूर्वक दर्ज हो गया। किचन में तैयारी शुरू हो गई है।"
+                } else {
+                    headline = "Order Placed"
+                    spoken = "Your order has been placed successfully and is being prepared in the kitchen."
+                }
+            }
+
             isBillQuery -> {
                 intent = "BILL_QUERY"
                 actionType = "VIEW_BILL"
                 actionLabel = "View Bill"
+                payload = ""
                 if (isTelugu) {
                     headline = "Bill Request"
                     spoken = "మీ ఆర్డర్ బిల్లు సిద్ధంగా ఉంది. స్క్రీన్ పై పరిశీలించవచ్చు."
@@ -214,12 +317,13 @@ Given the customer's transcribed speech and their language:
                 intent = "ASK_MENU"
                 actionType = "NAVIGATE_SECTION"
                 actionLabel = "View Menu"
+                payload = ""
                 if (isTelugu) {
                     headline = "Menu & Specials"
                     spoken = "మా వద్ద వేడి మసాలా దోశ, ఇడ్లీ సాంబార్, మరియు ఫిల్టర్ కాఫీ ప్రత్యేకమైనవి. మీకు ఏది కావాలి?"
                 } else if (isHindi) {
                     headline = "Menu & Specials"
-                    spoken = "हमारे पास गरमा-गरम मसाला डोसा, इडली सांभर और फ़िल्టర్ कॉफ़ी उपलब्ध है। आपको क्या चाहिए?"
+                    spoken = "हमारे पास गरमा-गरम मसाला डोसा, इडली सांभर और फ़िल्टर कॉफ़ी उपलब्ध है। आपको क्या चाहिए?"
                 } else {
                     headline = "Menu & Specials"
                     spoken = "We have hot crispy masala dosa, idli sambar, and filter coffee today. What would you like?"
@@ -230,6 +334,7 @@ Given the customer's transcribed speech and their language:
                 intent = "CUSTOMIZATION"
                 actionType = "ADD_TO_CART"
                 actionLabel = "Apply Customization"
+                payload = "Special Customization:1:$s"
                 if (isTelugu) {
                     headline = "Special Request: $s"
                     spoken = "ఖచ్చితంగా, మీ సూచనల ప్రకారం తయారు చేయిస్తాము."
@@ -242,27 +347,28 @@ Given the customer's transcribed speech and their language:
                 }
             }
 
-            isConfirmation -> {
-                intent = "CONFIRM_ORDER"
-                actionType = "ADD_TO_CART"
-                actionLabel = "Confirm Order"
-                if (isTelugu) {
-                    headline = "Order Confirmed"
-                    spoken = "మీ ఆర్డర్ విజయవంతంగా నమోదు చేయబడింది. ధన్యవాదాలు!"
-                } else if (isHindi) {
-                    headline = "Order Confirmed"
-                    spoken = "आपका ऑर्डर सफलतापूर्वक दर्ज कर लिया गया है। धन्यवाद!"
-                } else {
-                    headline = "Order Confirmed"
-                    spoken = "Your order has been confirmed and placed with the kitchen. Thank you!"
-                }
-            }
-
             else -> {
                 // General ordering of any food/drink item
                 intent = "ORDER_ITEMS"
                 actionType = "ADD_TO_CART"
                 actionLabel = "Add to Order"
+
+                // Extract quantity if present (e.g. "2 masala dosa", "ఒక దోశ", "दो चाय")
+                var qty = 1
+                val qtyMatch = Regex("^(\\d+)").find(s)
+                if (qtyMatch != null) {
+                    qty = qtyMatch.groupValues[1].toIntOrNull() ?: 1
+                } else if (lower.contains("two") || s.contains("రెండు") || s.contains("दो")) {
+                    qty = 2
+                } else if (lower.contains("three") || s.contains("మూడు") || s.contains("तीन")) {
+                    qty = 3
+                } else if (lower.contains("four") || s.contains("నాలుగు") || s.contains("चार")) {
+                    qty = 4
+                }
+
+                val cleanedItem = s.replace(Regex("^(\\d+|ఒక|రెండు|మూడు|నాలుగు|एक|दो|तीन|चार|one|two|three|four)\\s*", RegexOption.IGNORE_CASE), "").trim()
+                val itemName = if (cleanedItem.isNotBlank()) cleanedItem else s
+                payload = "$itemName:$qty:"
 
                 if (isTelugu) {
                     headline = "Order: $s"
@@ -296,7 +402,7 @@ Given the customer's transcribed speech and their language:
             caption = spoken,
             bullets = listOf("Customer: $s", "Intent: $intent"),
             actions = listOf(
-                UiAction(id = "act_1", label = actionLabel, actionType = actionType, payload = s)
+                UiAction(id = "act_1", label = actionLabel, actionType = actionType, payload = payload)
             )
         )
     }
