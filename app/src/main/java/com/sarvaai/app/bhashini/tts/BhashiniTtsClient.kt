@@ -39,11 +39,16 @@ class BhashiniTtsClient(
     companion object {
         private const val TAG = "BhashiniTtsClient"
 
-        // AnuvaadHub Sandbox Dedicated TTS Endpoints
-        private val TTS_ENDPOINTS = mapOf(
+        // AnuvaadHub Sandbox Dedicated TTS Endpoints (Primary + Fallbacks)
+        private val PRIMARY_TTS_ENDPOINTS = mapOf(
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca89ae0b95a6a1ea34a92", // IITM_TTS_Hindi
             "te" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca880e0b95a6a1ea34a91", // IITM_TTS_Telugu
             "en" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca8b3e0b95a6a1ea34a93"  // IITM_TTS_English
+        )
+
+        private val FALLBACK_TTS_ENDPOINTS = mapOf(
+            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68c1244c747a9002950e94f8", // FastSpeech2_Hindi
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68d2468f08531bc3c5ccf47d"  // FastSpeech2_Telugu
         )
 
         // English -> Native Target MT Endpoints
@@ -66,7 +71,33 @@ class BhashiniTtsClient(
     }
 
     /**
-     * Translates English text to [targetLanguage] if necessary, then synthesizes audio speech.
+     * Sanitizes text to remove problematic symbols (e.g. ₹, &, %, /) that cause backend TTS models to return HTTP 422 or 500.
+     */
+    fun sanitizeForTts(text: String, lang: String): String {
+        var t = text
+            .replace("₹", if (lang == "hi") " रुपये " else if (lang == "te") " రూపాయలు " else " rupees ")
+            .replace("&", if (lang == "hi") " और " else if (lang == "te") " మరియు " else " and ")
+            .replace("+", " and ")
+            .replace("/", " ")
+            .replace("\\", " ")
+            .replace("-", " ")
+            .replace("_", " ")
+
+        // Remove unsupported punctuation/brackets while keeping Indic and Latin alphabets, numbers, and standard pauses
+        t = t.replace(Regex("[()\\[\\]{}<>@#\$%^*~`\"'|]"), " ")
+        return t.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun isAlreadyInTargetScript(text: String, lang: String): Boolean {
+        return when (lang) {
+            "hi" -> text.any { it in '\u0900'..'\u097F' }
+            "te" -> text.any { it in '\u0C00'..'\u0C7F' }
+            else -> false
+        }
+    }
+
+    /**
+     * Translates English text to [targetLanguage] if necessary, sanitizes content, and synthesizes audio speech.
      */
     suspend fun synthesizeSpeech(
         englishText: String,
@@ -77,19 +108,21 @@ class BhashiniTtsClient(
         val lang = targetLanguage.lowercase()
         val token = if (BuildConfig.BHASHINI_INFERENCE_KEY.isNotEmpty()) BuildConfig.BHASHINI_INFERENCE_KEY else AsrNmtClient.DEFAULT_ACCESS_TOKEN
 
-        val cleanEnglish = englishText.trim()
-        if (cleanEnglish.isBlank() || !cleanEnglish.any { it.isLetterOrDigit() }) {
+        val cleanInput = englishText.trim()
+        if (cleanInput.isBlank() || !cleanInput.any { it.isLetterOrDigit() }) {
             Log.w(TAG, "Skipping TTS: input text has no speakable characters ('$englishText')")
             return@withContext Result.Error("No speakable text provided for TTS")
         }
 
-        // Step 1: Translate to target language if not English
-        var textToSpeak = cleanEnglish
-        if (lang != "en") {
+        // Step 1: Translation if required and not already in target Indic script
+        var textToSpeak = cleanInput
+        val alreadyTargetScript = isAlreadyInTargetScript(cleanInput, lang)
+
+        if (lang != "en" && !alreadyTargetScript) {
             val mtEndpoint = MT_EN_TO_TARGET_ENDPOINTS[lang]
             if (mtEndpoint != null) {
                 try {
-                    val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = cleanEnglish))
+                    val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = cleanInput))
                     val mtRequest = Request.Builder()
                         .url(mtEndpoint)
                         .header("access-token", token)
@@ -111,20 +144,21 @@ class BhashiniTtsClient(
             }
         }
 
-        // Defensive check: Ensure textToSpeak contains speakable characters to prevent API 422
-        if (textToSpeak.isBlank() || !textToSpeak.any { it.isLetterOrDigit() }) {
-            textToSpeak = cleanEnglish
+        // Step 2: Sanitize text for TTS synthesis (replaces ₹ with 'rupees', cleans punctuation)
+        val sanitizedText = sanitizeForTts(textToSpeak, lang)
+        if (sanitizedText.isBlank() || !sanitizedText.any { it.isLetterOrDigit() }) {
+            return@withContext Result.Error("Sanitized text is empty")
         }
 
         // Check local disk cache
-        val cacheKey = getCacheKey(textToSpeak, lang)
+        val cacheKey = getCacheKey(sanitizedText, lang)
         val cachedFile = cacheDir?.let { File(it, "$cacheKey.wav") }
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
-            Log.i(TAG, "TTS Cache HIT for [$lang] '$textToSpeak'")
+            Log.i(TAG, "TTS Cache HIT for [$lang] '$sanitizedText'")
             return@withContext Result.Success(
                 TtsSynthesisResult(
-                    originalText = cleanEnglish,
-                    spokenText = textToSpeak,
+                    originalText = cleanInput,
+                    spokenText = sanitizedText,
                     audioFile = cachedFile,
                     audioUrl = null,
                     targetLanguage = lang,
@@ -133,26 +167,45 @@ class BhashiniTtsClient(
             )
         }
 
-        // Step 2: Synthesize TTS
-        val ttsEndpoint = TTS_ENDPOINTS[lang] ?: TTS_ENDPOINTS["en"]!!
+        // Step 3: Synthesize TTS with primary endpoint and fallback support
+        val primaryUrl = PRIMARY_TTS_ENDPOINTS[lang] ?: PRIMARY_TTS_ENDPOINTS["en"]!!
+        val fallbackUrl = FALLBACK_TTS_ENDPOINTS[lang]
+
         val ttsPayload = json.encodeToString(
             AnuvaadHubTtsRequest.serializer(),
-            AnuvaadHubTtsRequest(text = textToSpeak, gender = gender)
+            AnuvaadHubTtsRequest(text = sanitizedText, gender = gender)
         )
 
+        var ttsResult = executeTtsCall(primaryUrl, token, ttsPayload, sanitizedText, cleanInput, lang, startTime)
+        if (ttsResult is Result.Error && fallbackUrl != null) {
+            Log.w(TAG, "Primary TTS failed (${ttsResult.message}), attempting fallback model: $fallbackUrl")
+            ttsResult = executeTtsCall(fallbackUrl, token, ttsPayload, sanitizedText, cleanInput, lang, startTime)
+        }
+
+        ttsResult
+    }
+
+    private fun executeTtsCall(
+        endpointUrl: String,
+        token: String,
+        ttsPayload: String,
+        sanitizedText: String,
+        originalText: String,
+        lang: String,
+        startTime: Long
+    ): Result<TtsSynthesisResult> {
         val ttsRequest = Request.Builder()
-            .url(ttsEndpoint)
+            .url(endpointUrl)
             .header("access-token", token)
             .post(ttsPayload.toRequestBody("application/json".toMediaType()))
             .build()
 
-        try {
+        return try {
             val ttsResponse = okHttpClient.newCall(ttsRequest).execute()
             val ttsBody = ttsResponse.body?.string()
             if (!ttsResponse.isSuccessful || ttsBody.isNullOrEmpty()) {
                 Log.e(TAG, "TTS generation error: HTTP ${ttsResponse.code} - $ttsBody")
-                val errorDetail = if (ttsResponse.code == 422) "HTTP 422 (Unprocessable text: '$textToSpeak')" else "HTTP ${ttsResponse.code}"
-                return@withContext Result.Error("AnuvaadHub TTS failed: $errorDetail")
+                return Result.Error("AnuvaadHub TTS failed: HTTP ${ttsResponse.code}")
             }
 
             val parsedTts = json.decodeFromString<AnuvaadHubTtsResponse>(ttsBody)
@@ -160,31 +213,30 @@ class BhashiniTtsClient(
             val base64Audio = parsedTts.data?.audioContent
 
             var resolvedAudioFile: File? = null
+            val cacheKey = getCacheKey(sanitizedText, lang)
+            val destFile = cacheDir?.let { File(it, "$cacheKey.wav") } ?: File.createTempFile("tts_", ".wav", context?.cacheDir)
 
             if (!s3Url.isNullOrEmpty()) {
-                // Download WAV bytes from s3Url
                 val downloadRequest = Request.Builder().url(s3Url).build()
                 val downloadResponse = okHttpClient.newCall(downloadRequest).execute()
                 val audioBytes = downloadResponse.body?.bytes()
                 if (audioBytes != null && audioBytes.isNotEmpty()) {
-                    val destFile = cachedFile ?: File.createTempFile("tts_", ".wav", context?.cacheDir)
                     FileOutputStream(destFile).use { it.write(audioBytes) }
                     resolvedAudioFile = destFile
                 }
             } else if (!base64Audio.isNullOrEmpty()) {
                 val audioBytes = Base64.decode(base64Audio, Base64.DEFAULT)
-                val destFile = cachedFile ?: File.createTempFile("tts_", ".wav", context?.cacheDir)
                 FileOutputStream(destFile).use { it.write(audioBytes) }
                 resolvedAudioFile = destFile
             }
 
             val latency = System.currentTimeMillis() - startTime
-            Log.i(TAG, "TTS Synthesis success in ${latency}ms for [$lang]: '$textToSpeak'")
+            Log.i(TAG, "TTS Synthesis success in ${latency}ms for [$lang]: '$sanitizedText'")
 
             Result.Success(
                 TtsSynthesisResult(
-                    originalText = cleanEnglish,
-                    spokenText = textToSpeak,
+                    originalText = originalText,
+                    spokenText = sanitizedText,
                     audioFile = resolvedAudioFile,
                     audioUrl = s3Url,
                     targetLanguage = lang,
