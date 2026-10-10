@@ -32,7 +32,7 @@ import com.sarvaai.app.ui.theme.*
 
 @Composable
 fun RawVsAccessibleDebugView(
-    onPlayAudio: (String) -> Unit,
+    onPlayAudio: (text: String, language: String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -200,7 +200,7 @@ fun RawVsAccessibleDebugView(
                 Spacer(modifier = Modifier.height(10.dp))
                 AccessibleButton(
                     text = "Hear Unadapted Raw Audio",
-                    onClick = { onPlayAudio(sampleRawMarkdown) },
+                    onClick = { onPlayAudio(sampleRawMarkdown, selectedLanguage) },
                     isPrimary = false
                 )
             }
@@ -265,7 +265,7 @@ fun RawVsAccessibleDebugView(
                 Spacer(modifier = Modifier.height(10.dp))
                 AccessibleButton(
                     text = "Hear SarvaAI Accessible Audio",
-                    onClick = { onPlayAudio(adaptedOutput.spokenText) },
+                    onClick = { onPlayAudio(adaptedOutput.spokenText, selectedLanguage) },
                     isPrimary = true
                 )
             }

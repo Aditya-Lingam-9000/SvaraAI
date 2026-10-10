@@ -106,10 +106,23 @@ class MainActivity : ComponentActivity() {
             var restaurantName by remember { mutableStateOf("Sarva Bhavan Restaurant") }
 
             fun playSpeech(text: String, lang: String = selectedLanguage) {
+                val cleanText = text.trim()
+                if (cleanText.isBlank() || !cleanText.any { it.isLetterOrDigit() }) return
+
                 lifecycleScope.launch {
-                    val res = ttsClient.synthesizeSpeech(text, lang)
-                    if (res is Result.Success) {
-                        res.data.audioFile?.let { speechPlayer.enqueueAudioFile(it, clearQueue = true) }
+                    speechPlayer.stop()
+                    val chunks = SentenceChunker.splitIntoChunks(cleanText)
+                    if (chunks.isEmpty()) return@launch
+
+                    for ((index, chunk) in chunks.withIndex()) {
+                        if (chunk.isBlank() || !chunk.any { it.isLetterOrDigit() }) continue
+                        val res = ttsClient.synthesizeSpeech(chunk, lang)
+                        if (res is Result.Success) {
+                            val audioFile = res.data.audioFile
+                            if (audioFile != null) {
+                                speechPlayer.enqueueAudioFile(audioFile, clearQueue = (index == 0))
+                            }
+                        }
                     }
                 }
             }
@@ -140,7 +153,7 @@ class MainActivity : ComponentActivity() {
                             hapticEngine = hapticEngine,
                             earconEngine = earconEngine,
                             selectedLanguage = selectedLanguage,
-                            onSpeakAnnouncement = { playSpeech(it) },
+                            onSpeakAnnouncement = { playSpeech(it, selectedLanguage) },
                             onMenuExtracted = { parsed ->
                                 restaurantName = parsed.menu.restaurantName
                                 menuSections = parsed.sections
@@ -159,7 +172,7 @@ class MainActivity : ComponentActivity() {
                             selectedLanguage = selectedLanguage,
                             hapticEngine = hapticEngine,
                             earconEngine = earconEngine,
-                            onSpeakNarration = { playSpeech(it) },
+                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
                             onAddItemToCart = { item ->
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                             },
@@ -169,7 +182,9 @@ class MainActivity : ComponentActivity() {
 
                     AppScreen.RAW_VS_ACCESSIBLE -> {
                         RawVsAccessibleDebugView(
-                            onPlayAudio = { playSpeech(it) },
+                            onPlayAudio = { textToPlay, langToPlay ->
+                                playSpeech(textToPlay, langToPlay)
+                            },
                             onClose = { currentScreen = AppScreen.PLAYGROUND }
                         )
                     }

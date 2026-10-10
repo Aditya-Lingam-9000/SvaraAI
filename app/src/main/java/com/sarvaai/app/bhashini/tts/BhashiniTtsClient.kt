@@ -88,6 +88,12 @@ class BhashiniTtsClient(
         return t.replace(Regex("\\s+"), " ").trim()
     }
 
+    fun detectScriptLanguage(text: String): String? {
+        if (text.any { it in '\u0C00'..'\u0C7F' }) return "te"
+        if (text.any { it in '\u0900'..'\u097F' }) return "hi"
+        return null
+    }
+
     private fun isAlreadyInTargetScript(text: String, lang: String): Boolean {
         return when (lang) {
             "hi" -> text.any { it in '\u0900'..'\u097F' }
@@ -105,7 +111,6 @@ class BhashiniTtsClient(
         gender: String = "female"
     ): Result<TtsSynthesisResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
-        val lang = targetLanguage.lowercase()
         val token = if (BuildConfig.BHASHINI_INFERENCE_KEY.isNotEmpty()) BuildConfig.BHASHINI_INFERENCE_KEY else AsrNmtClient.DEFAULT_ACCESS_TOKEN
 
         val cleanInput = englishText.trim()
@@ -114,9 +119,13 @@ class BhashiniTtsClient(
             return@withContext Result.Error("No speakable text provided for TTS")
         }
 
+        // Detect if text is already in an Indic script (e.g. Telugu or Hindi)
+        val detectedScript = detectScriptLanguage(cleanInput)
+        val lang = detectedScript ?: targetLanguage.lowercase()
+
         // Step 1: Translation if required and not already in target Indic script
         var textToSpeak = cleanInput
-        val alreadyTargetScript = isAlreadyInTargetScript(cleanInput, lang)
+        val alreadyTargetScript = detectedScript != null || isAlreadyInTargetScript(cleanInput, lang)
 
         if (lang != "en" && !alreadyTargetScript) {
             val mtEndpoint = MT_EN_TO_TARGET_ENDPOINTS[lang]
