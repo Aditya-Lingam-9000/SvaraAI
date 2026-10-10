@@ -293,6 +293,10 @@ class MainActivity : ComponentActivity() {
                             isAudioPlaying = isAudioPlaying,
                             onSpeakNarration = { playSpeech(it, selectedLanguage) },
                             onStopNarration = { stopSpeech() },
+                            onOpenBillSplit = {
+                                stopSpeech()
+                                currentScreen = AppScreen.SMART_BILL
+                            },
                             onClose = {
                                 stopSpeech()
                                 currentScreen = AppScreen.PLAYGROUND
@@ -324,6 +328,11 @@ class MainActivity : ComponentActivity() {
                     AppScreen.SMART_BILL -> {
                         SmartBillSplitScreen(
                             cartDao = database.cartDao(),
+                            orderDao = database.orderDao(),
+                            menuDao = database.menuDao(),
+                            groqClient = groqClient,
+                            audioRecorder = audioRecorder,
+                            asrNmtClient = asrNmtClient,
                             hapticEngine = hapticEngine,
                             earconEngine = earconEngine,
                             selectedLanguage = selectedLanguage,

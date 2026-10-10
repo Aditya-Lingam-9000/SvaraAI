@@ -63,6 +63,7 @@ fun VoiceOrderingCartScreen(
     isAudioPlaying: Boolean = false,
     onSpeakNarration: (String) -> Unit,
     onStopNarration: () -> Unit = {},
+    onOpenBillSplit: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -557,6 +558,18 @@ fun VoiceOrderingCartScreen(
                                     )
                                 }
                             }
+                            // Smart Bill Splitter Button
+                            Spacer(modifier = Modifier.height(10.dp))
+                            AccessibleButton(
+                                text = "💳 Split & Pay Bill via UPI (P11)",
+                                onClick = {
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    onStopNarration()
+                                    onOpenBillSplit()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                isPrimary = false
+                            )
                         }
                     }
                 }
@@ -618,7 +631,7 @@ fun VoiceOrderingCartScreen(
                                         status = "CONFIRMED"
                                     )
                                     orderDao.insertOrder(audit)
-                                    cartDao.clearCart()
+                                    // Preserve cart items for bill calculation and splitting
                                     hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                     earconEngine.play(EarconType.ORDER_CONFIRMED)
                                     val confirmMsg = when (selectedLanguage) {
@@ -670,14 +683,14 @@ fun VoiceOrderingCartScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Total Paid: ₹${order.totalRupees}",
+                                text = "Total Bill: ₹${order.totalRupees}",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = VegGreen
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Your food is being freshly prepared in the kitchen!",
+                                text = "Your food is being prepared in the kitchen. You can now split the bill or pay via UPI!",
                                 fontSize = 12.sp,
                                 color = SubtitleText
                             )
@@ -685,13 +698,23 @@ fun VoiceOrderingCartScreen(
                     },
                     confirmButton = {
                         AccessibleButton(
-                            text = "Done & Back to Menu",
+                            text = "💳 Split & Pay via UPI (P11)",
                             onClick = {
                                 confirmedOrderModal = null
-                                onClose()
+                                onOpenBillSplit()
                             },
                             isPrimary = true
                         )
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                confirmedOrderModal = null
+                                onClose()
+                            }
+                        ) {
+                            Text(text = "Back to Menu", color = PureWhite)
+                        }
                     }
                 )
             }
