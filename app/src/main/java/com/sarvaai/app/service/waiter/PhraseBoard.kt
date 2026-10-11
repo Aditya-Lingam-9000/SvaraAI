@@ -145,3 +145,75 @@ object PhraseBoard {
         return DINING_PHRASES.filter { it.category == category }
     }
 }
+
+data class ComplaintFeedbackItem(
+    val id: String,
+    val title: String,
+    val englishText: String,
+    val hindiText: String,
+    val teluguText: String,
+    val iconName: String,
+    val isCompliment: Boolean = false
+) {
+    fun getTextForLanguage(langCode: String): String {
+        return when (langCode.lowercase()) {
+            "hi" -> hindiText
+            "te" -> teluguText
+            else -> englishText
+        }
+    }
+}
+
+object ComplaintFeedbackBoard {
+    val ITEMS = listOf(
+        ComplaintFeedbackItem(
+            id = "cold_food",
+            title = "Food is Cold / Reheat",
+            englishText = "The food is cold. Please reheat it or replace it.",
+            hindiText = "खाना ठंडा हो गया है। कृपया इसे दोबारा गर्म कर दीजिए।",
+            teluguText = "ఆహారం చల్లగా ఉంది. దయచేసి మళ్లీ వేడి చేయండి.",
+            iconName = "ac_unit"
+        ),
+        ComplaintFeedbackItem(
+            id = "delay_order",
+            title = "Delay in Order / Follow Up",
+            englishText = "There is a delay in our order. Please follow up with the kitchen.",
+            hindiText = "ऑर्डर में बहुत देरी हो रही है। कृपया किचन से जल्दी मंगवाइए।",
+            teluguText = "ఆర్డర్ చాలా ఆలస్యమైంది. దయచేసి కిచెన్ నుంచి త్వరగా తీసుకురండి.",
+            iconName = "hourglass_top"
+        ),
+        ComplaintFeedbackItem(
+            id = "missing_item",
+            title = "Missing Item from Order",
+            englishText = "An item is missing from our order. Please check and bring it.",
+            hindiText = "हमारे ऑर्डर में एक आइटम छूट गया है। कृपया तुरंत चेक करके लाइए।",
+            teluguText = "మా ఆర్డర్‌లో ఒక ఐటమ్ రాలేదు. దయచేసి తనిఖీ చేసి తీసుకురండి.",
+            iconName = "remove_shopping_cart"
+        ),
+        ComplaintFeedbackItem(
+            id = "too_spicy",
+            title = "Too Spicy / Less Spice",
+            englishText = "The food is too spicy. Please make it less spicy or bring curd/raita.",
+            hindiText = "खाना बहुत तीखा है। कृपया कम तीखा बनाइए या दही/रायता दीजिए।",
+            teluguText = "ఆహారంలో కారం చాలా ఎక్కువగా ఉంది. దయచేసి కారం తగ్గించండి లేదా పెరుగు ఇవ్వండి.",
+            iconName = "local_fire_department"
+        ),
+        ComplaintFeedbackItem(
+            id = "clean_table_cutlery",
+            title = "Clean Table / Cutlery Request",
+            englishText = "Please clean the table and bring fresh cutlery.",
+            hindiText = "कृपया टेबल साफ कर दीजिए और नई कटलरी / चम्मच ले आइए।",
+            teluguText = "దయచేసి టేబుల్ శుభ్రం చేసి కొత్త ప్లేట్లు, చెంచాలు ఇవ్వండి.",
+            iconName = "cleaning_services"
+        ),
+        ComplaintFeedbackItem(
+            id = "compliment_chef",
+            title = "Compliment Chef / Food is Delicious",
+            englishText = "The food is delicious! Compliments to the chef.",
+            hindiText = "खाना बहुत स्वादिष्ट है! शेफ को बहुत बहुत धन्यवाद।",
+            teluguText = "ఆహారం చాలా రుచిగా ఉంది! చెఫ్‌కి మా అభినందనలు.",
+            iconName = "thumb_up",
+            isCompliment = true
+        )
+    )
+}

@@ -20,7 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -317,7 +318,6 @@ fun VoiceOrderingCartScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp)
-                    .systemBarsPadding()
             ) {
                 // Top Header Bar
                 Row(
@@ -358,14 +358,14 @@ fun VoiceOrderingCartScreen(
 
                         Column {
                             Text(
-                                text = "Voice Cart & Checkout",
+                                text = "Voice Cart",
                                 fontSize = 19.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = NeoTextPrimary,
                                 modifier = Modifier.semantics { heading() }
                             )
                             Text(
-                                text = "$restaurantName • ${cartItems.sumOf { it.quantity }} items",
+                                text = "${cartItems.sumOf { it.quantity }} items",
                                 fontSize = 12.sp,
                                 color = NeoTextSecondary,
                                 maxLines = 1,
@@ -664,7 +664,7 @@ fun VoiceOrderingCartScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = Icons.Default.ReceiptLong,
+                                        imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
                                         contentDescription = null,
                                         tint = NeoPrimary,
                                         modifier = Modifier.size(18.dp)

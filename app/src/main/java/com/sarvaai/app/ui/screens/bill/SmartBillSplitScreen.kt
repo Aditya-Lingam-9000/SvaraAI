@@ -329,14 +329,14 @@ fun SmartBillSplitScreen(
 
                         Column {
                             Text(
-                                text = "Smart Bill & Tax Splitter",
+                                text = "Bill & Split",
                                 fontSize = 19.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = NeoTextPrimary,
                                 modifier = Modifier.semantics { heading() }
                             )
                             Text(
-                                text = "$restaurantName • ${cartItems.sumOf { it.quantity }} items",
+                                text = "${cartItems.sumOf { it.quantity }} items",
                                 fontSize = 12.sp,
                                 color = NeoTextSecondary,
                                 maxLines = 1,

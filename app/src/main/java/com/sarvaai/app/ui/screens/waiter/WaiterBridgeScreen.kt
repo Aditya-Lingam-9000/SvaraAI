@@ -3,7 +3,7 @@ package com.sarvaai.app.ui.screens.waiter
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -43,12 +44,22 @@ import com.sarvaai.app.audio.haptics.HapticPattern
 import com.sarvaai.app.audio.recorder.AudioRecorder
 import com.sarvaai.app.bhashini.asr.AsrNmtClient
 import com.sarvaai.app.llm.GroqClient
+import com.sarvaai.app.service.waiter.ComplaintFeedbackBoard
+import com.sarvaai.app.service.waiter.ComplaintFeedbackItem
 import com.sarvaai.app.service.waiter.PhraseBoard
 import com.sarvaai.app.service.waiter.PhraseChip
 import com.sarvaai.app.service.waiter.WaiterBridgeController
 import com.sarvaai.app.service.wakeword.WakeWordDetector
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.launch
+
+data class RaisedComplaintData(
+    val dinerText: String,
+    val staffText: String,
+    val categoryTitle: String,
+    val isCompliment: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 @Composable
 fun WaiterBridgeScreen(
@@ -72,7 +83,30 @@ fun WaiterBridgeScreen(
     val isRecording by audioRecorder.isRecording.collectAsState()
 
     var selectedCategory by remember { mutableStateOf("DISABILITY") }
-    var recordingTarget by remember { mutableStateOf<String?>(null) } // "DINER" or "STAFF"
+    var recordingTarget by remember { mutableStateOf<String?>(null) } // "DINER", "STAFF", "FEEDBACK"
+    var activeRaisedComplaint by remember { mutableStateOf<RaisedComplaintData?>(null) }
+    var showComplaintConfirmation by remember { mutableStateOf(false) }
+
+    // Wave animations for listening state
+    val infiniteTransition = rememberInfiniteTransition(label = "micPulse")
+    val micPulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+    val micPulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 0.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
 
     // BackHandler to safely return to home
     BackHandler {
@@ -107,6 +141,7 @@ fun WaiterBridgeScreen(
         }
     }
 
+    // 1. DINER MIC HANDLER ("Speak to Waiter")
     fun handleDinerMicClick() {
         if (isRecording) {
             hapticEngine.trigger(HapticPattern.CLICK)
@@ -144,6 +179,7 @@ fun WaiterBridgeScreen(
         }
     }
 
+    // 2. STAFF MIC HANDLER ("Waiter Response")
     fun handleStaffMicClick() {
         if (isRecording) {
             hapticEngine.trigger(HapticPattern.CLICK)
@@ -181,6 +217,77 @@ fun WaiterBridgeScreen(
         }
     }
 
+    // 3. FEEDBACK MIC HANDLER ("Raise Complaint or Feedback")
+    fun handleFeedbackMicClick() {
+        if (isRecording) {
+            hapticEngine.trigger(HapticPattern.CLICK)
+            earconEngine.play(EarconType.LISTEN_STOP)
+            audioRecorder.stopRecording()
+            recordingTarget = null
+        } else {
+            onStopAudio()
+            recordingTarget = "FEEDBACK"
+            hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
+            earconEngine.play(EarconType.LISTEN_START)
+            audioRecorder.startRecording(
+                onUtteranceComplete = { wavBytes ->
+                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                    earconEngine.play(EarconType.LISTEN_STOP)
+                    scope.launch {
+                        controller.processFeedbackSpeech(
+                            wavBytes = wavBytes,
+                            onSuccess = { dinerText, staffText ->
+                                val isCompliment = dinerText.contains("delicious", ignoreCase = true) ||
+                                        dinerText.contains("good", ignoreCase = true) ||
+                                        dinerText.contains("బాగుంది", ignoreCase = true) ||
+                                        dinerText.contains("రుచి", ignoreCase = true) ||
+                                        dinerText.contains("स्वादिष्ट", ignoreCase = true) ||
+                                        dinerText.contains("बधाई", ignoreCase = true)
+                                activeRaisedComplaint = RaisedComplaintData(
+                                    dinerText = dinerText,
+                                    staffText = staffText,
+                                    categoryTitle = if (isCompliment) "Compliment" else "Spoken Feedback",
+                                    isCompliment = isCompliment
+                                )
+                                showComplaintConfirmation = true
+                            },
+                            onSpeakToStaff = { staffText, staffLang ->
+                                onSpeakAudio(staffText, staffLang)
+                            }
+                        )
+                    }
+                    recordingTarget = null
+                },
+                onError = {
+                    recordingTarget = null
+                    hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                    earconEngine.play(EarconType.ERROR_ALERT)
+                }
+            )
+        }
+    }
+
+    // 4. ONE-TAP FEEDBACK CHIP HANDLER
+    fun handleFeedbackChipClick(item: ComplaintFeedbackItem) {
+        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+        earconEngine.play(EarconType.ORDER_CONFIRMED)
+        val dinerText = item.getTextForLanguage(state.dinerLanguage)
+        val staffText = item.getTextForLanguage(state.staffLanguage)
+
+        controller.setStaffCardMessage(staffText, dinerText)
+        controller.setDinerCaption("📢 Feedback: $dinerText")
+
+        activeRaisedComplaint = RaisedComplaintData(
+            dinerText = dinerText,
+            staffText = staffText,
+            categoryTitle = item.title,
+            isCompliment = item.isCompliment
+        )
+        showComplaintConfirmation = true
+
+        onSpeakAudio(staffText, state.staffLanguage)
+    }
+
     Surface(
         modifier = modifier.fillMaxSize(),
         color = NeoBackground
@@ -191,7 +298,7 @@ fun WaiterBridgeScreen(
                 .padding(horizontal = 16.dp)
                 .systemBarsPadding()
         ) {
-            // Header Bar
+            // 1. TOP HEADER POLISH (Clean, small header title & subtitle, no large banner)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -206,7 +313,7 @@ fun WaiterBridgeScreen(
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(38.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(NeoPrimaryContainer)
                             .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
@@ -215,14 +322,14 @@ fun WaiterBridgeScreen(
                             imageVector = Icons.Default.SupportAgent,
                             contentDescription = null,
                             tint = NeoPrimary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
                             text = "Waiter Bridge",
-                            fontSize = 20.sp,
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
                             color = NeoTextPrimary,
                             modifier = Modifier.semantics { heading() }
@@ -244,7 +351,7 @@ fun WaiterBridgeScreen(
                         },
                         modifier = Modifier
                             .padding(end = 6.dp)
-                            .size(38.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
                             .background(if (state.isFlippedForStaff) NeoPrimary else NeoSurface)
                             .border(1.dp, NeoBorder, CircleShape)
@@ -253,7 +360,7 @@ fun WaiterBridgeScreen(
                             imageVector = Icons.Default.Flip,
                             contentDescription = "Flip staff card for waiter viewing",
                             tint = if (state.isFlippedForStaff) NeoOnPrimary else NeoTextPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
@@ -262,7 +369,7 @@ fun WaiterBridgeScreen(
                             onClick = onStopAudio,
                             modifier = Modifier
                                 .padding(end = 6.dp)
-                                .size(38.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                                 .background(NonVegRedContainer)
                                 .border(1.dp, NonVegRed, CircleShape)
@@ -271,7 +378,7 @@ fun WaiterBridgeScreen(
                                 imageVector = Icons.Default.Stop,
                                 contentDescription = "Stop speech playback",
                                 tint = NonVegRed,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -283,7 +390,7 @@ fun WaiterBridgeScreen(
                             onClose()
                         },
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
                             .background(NeoSurface)
                             .border(1.dp, NeoBorder, CircleShape)
@@ -292,13 +399,13 @@ fun WaiterBridgeScreen(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close Waiter Bridge",
                             tint = NeoTextPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             }
 
-            // Language Selector Row (Diner Lang <-> Staff Lang)
+            // 2. LANGUAGE SELECTOR ROW (Diner Lang <-> Staff Lang)
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeoSurface),
                 shape = RoundedCornerShape(14.dp),
@@ -309,7 +416,7 @@ fun WaiterBridgeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
+                        .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -320,7 +427,7 @@ fun WaiterBridgeScreen(
                                 imageVector = Icons.Default.RecordVoiceOver,
                                 contentDescription = null,
                                 tint = NeoPrimary,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -330,7 +437,7 @@ fun WaiterBridgeScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(5.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("te" to "తెలుగు", "hi" to "हिंदी", "en" to "Eng").forEach { (code, label) ->
                                 val isSelected = state.dinerLanguage == code
@@ -338,7 +445,7 @@ fun WaiterBridgeScreen(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(32.dp)
+                                        .height(30.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(if (isSelected) NeoPrimary else NeoSurfacePressed)
                                         .border(
@@ -367,8 +474,8 @@ fun WaiterBridgeScreen(
                         contentDescription = "to",
                         tint = NeoPrimary,
                         modifier = Modifier
-                            .padding(horizontal = 8.dp)
-                            .size(18.dp)
+                            .padding(horizontal = 6.dp)
+                            .size(16.dp)
                     )
 
                     // Staff Lang Selector
@@ -378,7 +485,7 @@ fun WaiterBridgeScreen(
                                 imageVector = Icons.Default.Badge,
                                 contentDescription = null,
                                 tint = Color(0xFF0D9488),
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -388,7 +495,7 @@ fun WaiterBridgeScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(5.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("hi" to "हिंदी", "te" to "తెలుగు", "en" to "Eng").forEach { (code, label) ->
                                 val isSelected = state.staffLanguage == code
@@ -396,7 +503,7 @@ fun WaiterBridgeScreen(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(32.dp)
+                                        .height(30.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(if (isSelected) Color(0xFF0D9488) else NeoSurfacePressed)
                                         .border(
@@ -422,200 +529,146 @@ fun WaiterBridgeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // OUTWARD-FACING STAFF CARD (Clean High-Contrast Typography, Flip Button)
+            // 3. PROMINENT STICKY MIC ACTION BAR (Always Accessible & Never Scrolled Off-Screen)
+            val isDinerRecording = isRecording && recordingTarget == "DINER"
+            val isStaffRecording = isRecording && recordingTarget == "STAFF"
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = NeoSurface),
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(2.dp, NeoPrimary),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                border = BorderStroke(
+                    1.5.dp,
+                    if (isDinerRecording) NonVegRed else if (isStaffRecording) Color(0xFF0D9488) else NeoBorder
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .rotate(if (state.isFlippedForStaff) 180f else 0f)
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = "Staff display showing: ${state.activeStaffCardText}"
-                    }
+                    .semantics { contentDescription = "Sticky voice communication bar" }
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Visibility,
-                                contentDescription = null,
-                                tint = NeoPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "SHOW TO WAITER / STAFF",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = NeoPrimary,
-                                letterSpacing = 0.8.sp
-                            )
-                        }
-
-                        IconButton(
-                            onClick = {
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                                onSpeakAudio(state.activeStaffCardText, state.staffLanguage)
-                            },
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(NeoPrimaryContainer)
-                                .border(1.dp, NeoPrimary.copy(alpha = 0.4f), CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = "Play loudly to staff",
-                                tint = NeoPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = state.activeStaffCardText,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = NeoTextPrimary,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 34.sp
-                    )
-
-                    if (state.activeStaffCardSubtext.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = state.activeStaffCardSubtext,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = NeoTextSecondary,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // LIVE DINER TRANSLATION / WAITER RESPONSE CARD
-            Card(
-                colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.5.dp, NeoBorder),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Translate,
-                                contentDescription = null,
-                                tint = NeoPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "LIVE TRANSLATION / WAITER REPLIES",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = NeoTextSecondary,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-
-                        if (state.isProcessing) {
-                            CircularProgressIndicator(
-                                color = NeoPrimary,
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = state.liveDinerCaption,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = NeoTextPrimary,
-                        lineHeight = 22.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // QUICK PHRASE CATEGORY TABS
-            Text(
-                text = "Instant Communication Phrases",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = NeoTextPrimary
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val categories = listOf(
-                    Triple("DISABILITY", "Disability Notice", Icons.AutoMirrored.Filled.Accessible),
-                    Triple("ESSENTIALS", "Water & Bill", Icons.Default.LocalDrink),
-                    Triple("FOOD_PREF", "Food Specs", Icons.Default.Restaurant),
-                    Triple("SERVICE", "Table Service", Icons.Default.RoomService)
-                )
-                items(categories) { (catKey, catLabel, icon) ->
-                    val isSelected = selectedCategory == catKey
+                    // 3A. PROMINENT DINER MIC ("Speak to Waiter")
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) NeoPrimary else NeoSurface)
+                            .weight(1.15f)
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isDinerRecording) NonVegRed else NeoPrimary)
                             .border(
-                                1.dp,
-                                if (isSelected) NeoPrimary else NeoBorder,
-                                RoundedCornerShape(10.dp)
+                                1.5.dp,
+                                if (isDinerRecording) NonVegRedContainer else NeoPrimaryContainer,
+                                RoundedCornerShape(12.dp)
                             )
-                            .clickable {
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                                selectedCategory = catKey
+                            .clickable { handleDinerMicClick() }
+                            .semantics {
+                                contentDescription = if (isDinerRecording) "Stop speaking to waiter" else "Speak to waiter in ${state.dinerLanguage.uppercase()}"
                             }
-                            .padding(horizontal = 12.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = if (isSelected) NeoOnPrimary else NeoTextSecondary,
-                                modifier = Modifier.size(14.dp)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(34.dp)) {
+                                if (isDinerRecording) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .scale(micPulseScale)
+                                            .background(Color.White.copy(alpha = micPulseAlpha), CircleShape)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (isDinerRecording) Icons.Default.GraphicEq else Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = catLabel,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) NeoOnPrimary else NeoTextPrimary
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isDinerRecording) "Listening..." else "Speak to Waiter",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (isDinerRecording) "Tap to Send" else "To Staff (${state.staffLanguage.uppercase()})",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
+                            if (isDinerRecording) {
+                                AudioWaveBars(isActive = true, tint = Color.White)
+                            }
+                        }
+                    }
+
+                    // 3B. STAFF MIC ("Waiter Response")
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isStaffRecording) NonVegRed else Color(0xFF0D9488))
+                            .border(
+                                1.5.dp,
+                                if (isStaffRecording) NonVegRedContainer else Color(0xFF99F6E4),
+                                RoundedCornerShape(12.dp)
                             )
+                            .clickable { handleStaffMicClick() }
+                            .semantics {
+                                contentDescription = if (isStaffRecording) "Stop waiter listening" else "Hold for waiter response in ${state.staffLanguage.uppercase()}"
+                            }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(34.dp)) {
+                                if (isStaffRecording) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .scale(micPulseScale)
+                                            .background(Color.White.copy(alpha = micPulseAlpha), CircleShape)
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (isStaffRecording) Icons.Default.GraphicEq else Icons.Default.Hearing,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isStaffRecording) "Listening..." else "Waiter Response",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (isStaffRecording) "Tap to Stop" else "Waiter (${state.staffLanguage.uppercase()})",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
+                            if (isStaffRecording) {
+                                AudioWaveBars(isActive = true, tint = Color.White)
+                            }
                         }
                     }
                 }
@@ -623,17 +676,219 @@ fun WaiterBridgeScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // QUICK PHRASE CHIPS LIST
+            // 4. SCROLLABLE BRIDGE CONTENT (Staff card, Live translation, Phrases, & Raise Complaint Card at bottom)
             val activePhrases = remember(selectedCategory) {
                 PhraseBoard.getPhrasesByCategory(selectedCategory)
             }
 
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
+                // ITEM 1: OUTWARD-FACING STAFF CARD (Clean High-Contrast Typography, Flip Button)
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(2.dp, NeoPrimary),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .rotate(if (state.isFlippedForStaff) 180f else 0f)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = "Staff display showing: ${state.activeStaffCardText}"
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Visibility,
+                                        contentDescription = null,
+                                        tint = NeoPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "SHOW TO WAITER / STAFF",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeoPrimary,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        onSpeakAudio(state.activeStaffCardText, state.staffLanguage)
+                                    },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(NeoPrimaryContainer)
+                                        .border(1.dp, NeoPrimary.copy(alpha = 0.4f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                        contentDescription = "Play loudly to staff",
+                                        tint = NeoPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = state.activeStaffCardText,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = NeoTextPrimary,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 32.sp
+                            )
+
+                            if (state.activeStaffCardSubtext.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = state.activeStaffCardSubtext,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = NeoTextSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ITEM 2: LIVE DINER TRANSLATION / WAITER RESPONSE CARD
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.5.dp, NeoBorder),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Translate,
+                                        contentDescription = null,
+                                        tint = NeoPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "LIVE TRANSLATION / WAITER REPLIES",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeoTextSecondary,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+
+                                if (state.isProcessing) {
+                                    CircularProgressIndicator(
+                                        color = NeoPrimary,
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = state.liveDinerCaption,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NeoTextPrimary,
+                                lineHeight = 20.sp
+                            )
+                        }
+                    }
+                }
+
+                // ITEM 3: INSTANT COMMUNICATION PHRASE CATEGORY TABS
+                item {
+                    Column {
+                        Text(
+                            text = "Instant Communication Phrases",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val categories = listOf(
+                                Triple("DISABILITY", "Disability Notice", Icons.AutoMirrored.Filled.Accessible),
+                                Triple("ESSENTIALS", "Water & Bill", Icons.Default.LocalDrink),
+                                Triple("FOOD_PREF", "Food Specs", Icons.Default.Restaurant),
+                                Triple("SERVICE", "Table Service", Icons.Default.RoomService)
+                            )
+                            items(categories) { (catKey, catLabel, icon) ->
+                                val isSelected = selectedCategory == catKey
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) NeoPrimary else NeoSurface)
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) NeoPrimary else NeoBorder,
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            selectedCategory = catKey
+                                        }
+                                        .padding(horizontal = 10.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            tint = if (isSelected) NeoOnPrimary else NeoTextSecondary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = catLabel,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) NeoOnPrimary else NeoTextPrimary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ITEMS 4: QUICK PHRASE CARDS
                 items(activePhrases, key = { it.id }) { phrase ->
                     val dinerDisplay = phrase.getTextForLanguage(state.dinerLanguage)
                     val staffDisplay = phrase.getTextForLanguage(state.staffLanguage)
@@ -660,14 +915,14 @@ fun WaiterBridgeScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp),
+                                .padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(NeoSurfacePressed)
                                     .border(1.dp, NeoBorder, RoundedCornerShape(8.dp))
@@ -676,7 +931,7 @@ fun WaiterBridgeScreen(
                                     imageVector = phraseIcon,
                                     contentDescription = null,
                                     tint = NeoPrimary,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
@@ -685,14 +940,14 @@ fun WaiterBridgeScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = dinerDisplay,
-                                    fontSize = 14.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = NeoTextPrimary
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Staff will hear: \"$staffDisplay\"",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = NeoTextSecondary
                                 )
                             }
@@ -701,95 +956,374 @@ fun WaiterBridgeScreen(
                                 imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                                 contentDescription = null,
                                 tint = NeoPrimary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                // ITEM 5: RAISE COMPLAINT OR FEEDBACK FEATURE (AT BOTTOM OF BRIDGE PAGE)
+                item {
+                    val isFeedbackRecording = isRecording && recordingTarget == "FEEDBACK"
 
-            // DUAL-MIC CONTROLS (Diner Mic & Waiter Mic)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                // 1. DINER MIC BUTTON
-                val isDinerRecording = isRecording && recordingTarget == "DINER"
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(54.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (isDinerRecording) NonVegRed else NeoPrimary)
-                        .border(
-                            1.5.dp,
-                            if (isDinerRecording) NonVegRedContainer else NeoPrimaryContainer,
-                            RoundedCornerShape(14.dp)
-                        )
-                        .clickable { handleDinerMicClick() }
-                        .semantics {
-                            contentDescription = if (isDinerRecording) "Stop diner voice input" else "Speak message in ${state.dinerLanguage.uppercase()} to translate for staff"
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.5.dp, Color(0xFFF59E0B).copy(alpha = 0.5f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = "Raise Complaint or Feedback Section"
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp)
+                        ) {
+                            // Header
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFFFEF3C7))
+                                        .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Campaign,
+                                        contentDescription = null,
+                                        tint = Color(0xFFD97706),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Raise Complaint or Feedback",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeoTextPrimary
+                                    )
+                                    Text(
+                                        text = "Speak feedback or issue in any language. Svara translates & speaks to staff.",
+                                        fontSize = 11.sp,
+                                        color = NeoTextSecondary,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+
+                            // LIVE CARD / CONFIRMATION CARD ("Raised to Floor Manager / Captain")
+                            if (activeRaisedComplaint != null && showComplaintConfirmation) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (activeRaisedComplaint!!.isCompliment) Color(0xFFF0FDF4) else Color(0xFFFFFBEB)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(
+                                        1.5.dp,
+                                        if (activeRaisedComplaint!!.isCompliment) Color(0xFF16A34A) else Color(0xFFD97706)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = if (activeRaisedComplaint!!.isCompliment) Icons.Default.ThumbUp else Icons.Default.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = if (activeRaisedComplaint!!.isCompliment) Color(0xFF16A34A) else Color(0xFFD97706),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = if (activeRaisedComplaint!!.isCompliment) "Compliment Shared with Captain & Chef" else "Raised to Floor Manager / Captain",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (activeRaisedComplaint!!.isCompliment) Color(0xFF15803D) else Color(0xFFB45309)
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = { showComplaintConfirmation = false },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Dismiss confirmation",
+                                                    tint = NeoTextSecondary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(6.dp))
+
+                                        // Category Tag
+                                        Text(
+                                            text = "CATEGORY: ${activeRaisedComplaint!!.categoryTitle.uppercase()}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = NeoTextSecondary,
+                                            letterSpacing = 0.5.sp
+                                        )
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        // Diner utterance
+                                        Text(
+                                            text = "You (${state.dinerLanguage.uppercase()}): \"${activeRaisedComplaint!!.dinerText}\"",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = NeoTextPrimary
+                                        )
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        // Translated utterance spoken to staff
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "🗣️ Spoken to Staff (${state.staffLanguage.uppercase()}): \"${activeRaisedComplaint!!.staffText}\"",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (activeRaisedComplaint!!.isCompliment) Color(0xFF15803D) else Color(0xFFB45309),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                                    onSpeakAudio(activeRaisedComplaint!!.staffText, state.staffLanguage)
+                                                },
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (activeRaisedComplaint!!.isCompliment) Color(0xFFDCFCE7) else Color(0xFFFEF3C7))
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                                    contentDescription = "Replay to staff",
+                                                    tint = if (activeRaisedComplaint!!.isCompliment) Color(0xFF16A34A) else Color(0xFFD97706),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Microphone Button to speak complaint/feedback
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isFeedbackRecording) NonVegRed else NeoSurfacePressed)
+                                    .border(
+                                        1.5.dp,
+                                        if (isFeedbackRecording) NonVegRedContainer else Color(0xFFF59E0B).copy(alpha = 0.5f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { handleFeedbackMicClick() }
+                                    .semantics {
+                                        contentDescription = if (isFeedbackRecording) "Stop recording feedback" else "Speak complaint or feedback in your language"
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.padding(horizontal = 10.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
+                                        if (isFeedbackRecording) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .scale(micPulseScale)
+                                                    .background(Color.White.copy(alpha = micPulseAlpha), CircleShape)
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = if (isFeedbackRecording) Icons.Default.GraphicEq else Icons.Default.Mic,
+                                            contentDescription = null,
+                                            tint = if (isFeedbackRecording) Color.White else Color(0xFFD97706),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (isFeedbackRecording) "Listening to Feedback... Tap to Send" else "Tap Mic to Speak Issue in ${when(state.dinerLanguage) { "te" -> "తెలుగు"; "hi" -> "हिंदी"; else -> "English" }}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isFeedbackRecording) Color.White else NeoTextPrimary
+                                    )
+                                    if (isFeedbackRecording) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        AudioWaveBars(isActive = true, tint = Color.White)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                text = "Quick One-Tap Feedback Issues",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextPrimary
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 6 Feedback Category Chips (in 3 rows of 2)
+                            val feedbackChips = remember { ComplaintFeedbackBoard.ITEMS }
+                            feedbackChips.chunked(2).forEach { pair ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    pair.forEach { chipItem ->
+                                        val isSelected = activeRaisedComplaint?.categoryTitle == chipItem.title
+                                        Card(
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (isSelected) NeoSurfacePressed else NeoSurface
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(
+                                                1.dp,
+                                                if (isSelected) Color(0xFFF59E0B) else NeoBorder
+                                            ),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable { handleFeedbackChipClick(chipItem) }
+                                                .semantics(mergeDescendants = true) {
+                                                    contentDescription = "One tap issue: ${chipItem.title}"
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 8.dp, vertical = 9.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier
+                                                        .size(28.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(if (chipItem.isCompliment) Color(0xFFDCFCE7) else Color(0xFFFEF3C7))
+                                                ) {
+                                                    Icon(
+                                                        imageVector = getFeedbackMaterialIcon(chipItem.iconName),
+                                                        contentDescription = null,
+                                                        tint = if (chipItem.isCompliment) Color(0xFF16A34A) else Color(0xFFD97706),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = chipItem.title,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = NeoTextPrimary,
+                                                    lineHeight = 14.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (pair.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                            }
                         }
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isDinerRecording) Icons.Default.Stop else Icons.Default.Mic,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isDinerRecording) "Stop & Send" else "Speak to Staff",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
                     }
                 }
 
-                // 2. STAFF / WAITER MIC BUTTON
-                val isStaffRecording = isRecording && recordingTarget == "STAFF"
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(54.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (isStaffRecording) NonVegRed else Color(0xFF0D9488))
-                        .border(
-                            1.5.dp,
-                            if (isStaffRecording) NonVegRedContainer else Color(0xFF99F6E4),
-                            RoundedCornerShape(14.dp)
-                        )
-                        .clickable { handleStaffMicClick() }
-                        .semantics {
-                            contentDescription = if (isStaffRecording) "Stop staff listening" else "Hold for staff to speak in ${state.staffLanguage.uppercase()}"
-                        }
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isStaffRecording) Icons.Default.Stop else Icons.Default.Mic,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isStaffRecording) "Stop Listening" else "Staff Mic",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
+                // ITEM 6: BOTTOM SPACING
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
-
-            Spacer(modifier = Modifier.height(10.dp))
         }
+    }
+}
+
+@Composable
+private fun AudioWaveBars(
+    isActive: Boolean,
+    tint: Color = Color.White,
+    modifier: Modifier = Modifier
+) {
+    if (isActive) {
+        val transition = rememberInfiniteTransition(label = "waveBars")
+        val h1 by transition.animateFloat(
+            initialValue = 4f,
+            targetValue = 18f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(320, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "h1"
+        )
+        val h2 by transition.animateFloat(
+            initialValue = 16f,
+            targetValue = 6f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(260, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "h2"
+        )
+        val h3 by transition.animateFloat(
+            initialValue = 8f,
+            targetValue = 20f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(400, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "h3"
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+            modifier = modifier
+        ) {
+            Box(modifier = Modifier.width(3.dp).height(h1.dp).background(tint, RoundedCornerShape(1.5.dp)))
+            Box(modifier = Modifier.width(3.dp).height(h2.dp).background(tint, RoundedCornerShape(1.5.dp)))
+            Box(modifier = Modifier.width(3.dp).height(h3.dp).background(tint, RoundedCornerShape(1.5.dp)))
+        }
+    }
+}
+
+private fun getFeedbackMaterialIcon(iconName: String): ImageVector {
+    return when (iconName) {
+        "ac_unit" -> Icons.Default.AcUnit
+        "hourglass_top" -> Icons.Default.HourglassTop
+        "remove_shopping_cart" -> Icons.Default.RemoveShoppingCart
+        "local_fire_department" -> Icons.Default.LocalFireDepartment
+        "cleaning_services" -> Icons.Default.CleaningServices
+        "thumb_up" -> Icons.Default.ThumbUp
+        else -> Icons.Default.ReportProblem
     }
 }
 

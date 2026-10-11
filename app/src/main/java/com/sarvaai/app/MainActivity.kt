@@ -80,8 +80,11 @@ import com.sarvaai.app.ui.screens.bill.SmartBillSplitScreen
 import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
 import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
+import com.sarvaai.app.ui.screens.compare.CompareDishesScreen
 import com.sarvaai.app.ui.screens.debug.DebugSignalPanel
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
+import com.sarvaai.app.ui.screens.hub.HubSubTab
+import com.sarvaai.app.ui.screens.hub.OrderAndServiceHubScreen
 import com.sarvaai.app.ui.screens.waiter.WaiterBridgeScreen
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.Job
@@ -94,6 +97,8 @@ enum class AppScreen {
     PLAYGROUND,
     CAMERA_CAPTURE,
     MENU_BROWSER,
+    COMPARE_DISHES,
+    ORDER_SERVICE_HUB,
     VOICE_CART,
     WAITER_BRIDGE,
     SMART_BILL,
@@ -212,6 +217,7 @@ class MainActivity : ComponentActivity() {
             var menuSections by remember { mutableStateOf<List<MenuSectionEntity>>(emptyList()) }
             var menuItemsBySection by remember { mutableStateOf<Map<String, List<MenuItemEntity>>>(emptyMap()) }
             var restaurantName by remember { mutableStateOf("Sarva Bhavan Restaurant") }
+            var orderHubInitialTab by remember { mutableStateOf(HubSubTab.CART) }
 
             val isAudioPlaying by speechPlayer.isPlaying.collectAsState()
 
@@ -411,7 +417,16 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onOpenCart = {
                                         stopSpeech()
-                                        currentScreen = AppScreen.VOICE_CART
+                                        orderHubInitialTab = HubSubTab.CART
+                                        currentScreen = AppScreen.ORDER_SERVICE_HUB
+                                    },
+                                    onOpenCompare = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.COMPARE_DISHES
+                                    },
+                                    onScanAgain = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.CAMERA_CAPTURE
                                     },
                                     onClose = {
                                         stopSpeech()
@@ -420,68 +435,37 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
-                            AppScreen.VOICE_CART -> {
-                                VoiceOrderingCartScreen(
-                                    cartDao = database.cartDao(),
-                                    orderDao = database.orderDao(),
-                                    menuDao = database.menuDao(),
-                                    groqClient = groqClient,
-                                    audioRecorder = audioRecorder,
-                                    asrNmtClient = asrNmtClient,
-                                    hapticEngine = hapticEngine,
-                                    earconEngine = earconEngine,
-                                    selectedLanguage = selectedLanguage,
-                                    restaurantName = restaurantName,
-                                    isAudioPlaying = isAudioPlaying,
-                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
-                                    onStopNarration = { stopSpeech() },
-                                    onOpenBillSplit = {
-                                        stopSpeech()
-                                        currentScreen = AppScreen.SMART_BILL
-                                    },
-                                    onClose = {
-                                        stopSpeech()
-                                        currentScreen = AppScreen.PLAYGROUND
-                                    }
-                                )
-                            }
-
-                            AppScreen.WAITER_BRIDGE -> {
-                                WaiterBridgeScreen(
-                                    asrNmtClient = asrNmtClient,
-                                    groqClient = groqClient,
-                                    audioRecorder = audioRecorder,
-                                    hapticEngine = hapticEngine,
-                                    earconEngine = earconEngine,
-                                    initialDinerLanguage = selectedLanguage,
-                                    initialStaffLanguage = if (selectedLanguage == "hi") "te" else "hi",
-                                    isAudioPlaying = isAudioPlaying,
-                                    onSpeakAudio = { textToSpeak, langToSpeak ->
-                                        playSpeech(textToSpeak, langToSpeak)
-                                    },
-                                    onStopAudio = { stopSpeech() },
-                                    onClose = {
-                                        stopSpeech()
-                                        currentScreen = AppScreen.PLAYGROUND
-                                    }
-                                )
-                            }
-
+                            AppScreen.ORDER_SERVICE_HUB,
+                            AppScreen.VOICE_CART,
+                            AppScreen.WAITER_BRIDGE,
                             AppScreen.SMART_BILL -> {
-                                SmartBillSplitScreen(
+                                val effectiveInitialTab = when (currentScreen) {
+                                    AppScreen.WAITER_BRIDGE -> HubSubTab.WAITER_BRIDGE
+                                    AppScreen.SMART_BILL -> HubSubTab.BILL_SPLIT
+                                    AppScreen.VOICE_CART -> HubSubTab.CART
+                                    else -> orderHubInitialTab
+                                }
+                                OrderAndServiceHubScreen(
                                     cartDao = database.cartDao(),
                                     orderDao = database.orderDao(),
-                                    menuDao = database.menuDao(),
                                     groqClient = groqClient,
                                     audioRecorder = audioRecorder,
                                     asrNmtClient = asrNmtClient,
                                     hapticEngine = hapticEngine,
                                     earconEngine = earconEngine,
                                     selectedLanguage = selectedLanguage,
+                                    menuDao = database.menuDao(),
                                     restaurantName = restaurantName,
                                     isAudioPlaying = isAudioPlaying,
-                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    initialTab = effectiveInitialTab,
+                                    onSpeakAudio = { text, lang -> playSpeech(text, lang) },
+                                    onSpeakNarration = { text -> playSpeech(text, selectedLanguage) },
+                                    onStopAudio = { stopSpeech() },
                                     onStopNarration = { stopSpeech() },
+                                    onNavigateToPlayground = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    },
                                     onClose = {
                                         stopSpeech()
                                         currentScreen = AppScreen.PLAYGROUND
@@ -508,6 +492,68 @@ class MainActivity : ComponentActivity() {
                                     signalCollector = signalCollector,
                                     inferenceEngine = profileInferenceEngine,
                                     hapticEngine = hapticEngine,
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.COMPARE_DISHES -> {
+                                val allDishes = menuItemsBySection.values.flatten()
+                                CompareDishesScreen(
+                                    menuItems = allDishes,
+                                    cartDao = database.cartDao(),
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    selectedLanguage = selectedLanguage,
+                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    onStopNarration = { stopSpeech() },
+                                    onNavigateToOrderHub = {
+                                        stopSpeech()
+                                        orderHubInitialTab = HubSubTab.CART
+                                        currentScreen = AppScreen.ORDER_SERVICE_HUB
+                                    },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.ORDER_SERVICE_HUB,
+                            AppScreen.VOICE_CART,
+                            AppScreen.WAITER_BRIDGE,
+                            AppScreen.SMART_BILL -> {
+                                val effectiveInitialTab = when (currentScreen) {
+                                    AppScreen.WAITER_BRIDGE -> HubSubTab.WAITER_BRIDGE
+                                    AppScreen.SMART_BILL -> HubSubTab.BILL_SPLIT
+                                    AppScreen.VOICE_CART -> HubSubTab.CART
+                                    else -> orderHubInitialTab
+                                }
+                                OrderAndServiceHubScreen(
+                                    cartDao = database.cartDao(),
+                                    orderDao = database.orderDao(),
+                                    groqClient = groqClient,
+                                    audioRecorder = audioRecorder,
+                                    asrNmtClient = asrNmtClient,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    selectedLanguage = selectedLanguage,
+                                    menuDao = database.menuDao(),
+                                    restaurantName = restaurantName,
+                                    isAudioPlaying = isAudioPlaying,
+                                    initialTab = effectiveInitialTab,
+                                    onSpeakAudio = { textToSpeak, langToSpeak ->
+                                        playSpeech(textToSpeak, langToSpeak)
+                                    },
+                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    onStopAudio = { stopSpeech() },
+                                    onStopNarration = { stopSpeech() },
+                                    onNavigateToPlayground = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    },
                                     onClose = {
                                         stopSpeech()
                                         currentScreen = AppScreen.PLAYGROUND
@@ -789,12 +835,11 @@ data class BottomNavTabItem(
 )
 
 /**
- * Neomorphic Bottom Navigation Bar with 5 tabs:
+ * Neomorphic Bottom Navigation Bar with 4 tabs:
  * 1. Home / Assistant (Mic)
- * 2. Menu & Scan (CameraAlt)
- * 3. Cart (ShoppingCart)
- * 4. Waiter Bridge (Translate)
- * 5. Bill & Split (ReceiptLong)
+ * 2. Scan Menu (CameraAlt)
+ * 3. Compare (CompareArrows)
+ * 4. Order Hub (ReceiptLong)
  */
 @Composable
 fun NeomorphicBottomNavBar(
@@ -816,22 +861,16 @@ fun NeomorphicBottomNavBar(
             contentDescription = "Camera and Menu OCR Scanner"
         ),
         BottomNavTabItem(
-            screen = AppScreen.VOICE_CART,
-            title = "Cart",
-            icon = Icons.Default.ShoppingCart,
-            contentDescription = "Voice Ordering Cart"
+            screen = AppScreen.COMPARE_DISHES,
+            title = "Compare",
+            icon = Icons.AutoMirrored.Filled.CompareArrows,
+            contentDescription = "Compare Dishes by Spice and Price"
         ),
         BottomNavTabItem(
-            screen = AppScreen.WAITER_BRIDGE,
-            title = "Bridge",
-            icon = Icons.Default.Translate,
-            contentDescription = "Multilingual Waiter Bridge"
-        ),
-        BottomNavTabItem(
-            screen = AppScreen.SMART_BILL,
-            title = "Bill",
+            screen = AppScreen.ORDER_SERVICE_HUB,
+            title = "Order Hub",
             icon = Icons.AutoMirrored.Filled.ReceiptLong,
-            contentDescription = "Smart Bill and Split"
+            contentDescription = "Order and Service Hub (Cart, Waiter Bridge, Bill Split)"
         )
     )
 
@@ -863,9 +902,8 @@ fun NeomorphicBottomNavBar(
                     val isSelected = when (tab.screen) {
                         AppScreen.PLAYGROUND -> currentScreen == AppScreen.PLAYGROUND || currentScreen == AppScreen.RAW_VS_ACCESSIBLE || currentScreen == AppScreen.DEBUG_SIGNAL_PANEL
                         AppScreen.CAMERA_CAPTURE -> currentScreen == AppScreen.CAMERA_CAPTURE || currentScreen == AppScreen.MENU_BROWSER
-                        AppScreen.VOICE_CART -> currentScreen == AppScreen.VOICE_CART
-                        AppScreen.WAITER_BRIDGE -> currentScreen == AppScreen.WAITER_BRIDGE
-                        AppScreen.SMART_BILL -> currentScreen == AppScreen.SMART_BILL
+                        AppScreen.COMPARE_DISHES -> currentScreen == AppScreen.COMPARE_DISHES
+                        AppScreen.ORDER_SERVICE_HUB -> currentScreen == AppScreen.ORDER_SERVICE_HUB || currentScreen == AppScreen.VOICE_CART || currentScreen == AppScreen.WAITER_BRIDGE || currentScreen == AppScreen.SMART_BILL
                         else -> false
                     }
 
@@ -1725,6 +1763,66 @@ fun MainAudioPlaygroundScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // Compare Dishes Feature Button
+            val compareInteraction = remember { MutableInteractionSource() }
+            val isComparePressed by compareInteraction.collectIsPressedAsState()
+            val compareScale by animateFloatAsState(
+                targetValue = if (isComparePressed) 0.96f else 1.0f,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                label = "compare_scale"
+            )
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .scale(compareScale)
+                    .neomorphicSurface(
+                        shape = RoundedCornerShape(14.dp),
+                        surfaceColor = NeoSurface,
+                        borderColor = NeoPrimary,
+                        borderWidth = 1.2.dp,
+                        elevation = 4.dp,
+                        isPressed = isComparePressed,
+                        cornerRadius = 14.dp
+                    )
+                    .clickable(
+                        interactionSource = compareInteraction,
+                        indication = null,
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            onOpenScreen(AppScreen.COMPARE_DISHES)
+                        }
+                    )
+                    .padding(horizontal = 14.dp)
+                    .semantics {
+                        contentDescription = "Compare Dishes by spice level and price"
+                        role = Role.Button
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.CompareArrows,
+                        contentDescription = null,
+                        tint = NeoPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Compare Dishes (Spice & Price)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoPrimary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Advanced Diagnostic & Jury Navigation Buttons
             Row(

@@ -18,10 +18,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +62,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+enum class MenuBottomPopupState {
+    READY_TO_ORDER,
+    COMPARE_DISHES,
+    DISMISSED
+}
+
 @Composable
 fun MenuBrowserScreen(
     restaurantName: String,
@@ -78,7 +85,9 @@ fun MenuBrowserScreen(
     onStopNarration: () -> Unit = {},
     onAddItemToCart: (MenuItemEntity) -> Unit,
     onOpenCart: () -> Unit = {},
+    onOpenCompare: () -> Unit = {},
     onClose: () -> Unit,
+    onScanAgain: () -> Unit = onClose,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -91,6 +100,24 @@ fun MenuBrowserScreen(
     var isAiProcessing by remember { mutableStateOf(false) }
     var liveCaptionText by remember { mutableStateOf<String?>(null) }
     var highlightedItemId by remember { mutableStateOf<String?>(null) }
+    var bottomPopupState by remember { mutableStateOf(MenuBottomPopupState.READY_TO_ORDER) }
+
+    // Sequential Bottom Pop-ups: State 1 (3s) -> State 2 (5s) -> Dismissed
+    LaunchedEffect(bottomPopupState) {
+        when (bottomPopupState) {
+            MenuBottomPopupState.READY_TO_ORDER -> {
+                delay(3000L)
+                bottomPopupState = MenuBottomPopupState.COMPARE_DISHES
+            }
+            MenuBottomPopupState.COMPARE_DISHES -> {
+                delay(5000L)
+                bottomPopupState = MenuBottomPopupState.DISMISSED
+            }
+            MenuBottomPopupState.DISMISSED -> {
+                // Closed
+            }
+        }
+    }
 
     // Pulsing animation for active voice mic listening
     val infiniteTransition = rememberInfiniteTransition(label = "mic_pulse")
@@ -365,32 +392,36 @@ fun MenuBrowserScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
+                    IconButton(
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            onStopNarration()
+                            onScanAgain()
+                        },
                         modifier = Modifier
-                            .size(42.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeoPrimaryContainer)
-                            .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(NeoSurface)
+                            .border(1.dp, NeoBorder, CircleShape)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.RestaurantMenu,
-                            contentDescription = null,
-                            tint = NeoPrimary,
-                            modifier = Modifier.size(24.dp)
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Scan Again",
+                            tint = NeoTextPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = restaurantName,
-                            fontSize = 20.sp,
+                            text = "Menu Card",
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = NeoTextPrimary,
                             modifier = Modifier.semantics { heading() }
                         )
                         Text(
-                            text = "Navigable Menu (${sections.size} sections, $totalItemsCount items)",
+                            text = "${sections.size} sections • $totalItemsCount dishes",
                             fontSize = 12.sp,
                             color = NeoTextSecondary
                         )
@@ -415,6 +446,27 @@ fun MenuBrowserScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            onStopNarration()
+                            onScanAgain()
+                        },
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(NeoSurface)
+                            .border(1.dp, NeoBorder, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Scan Again",
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
 
                     IconButton(
@@ -968,70 +1020,201 @@ fun MenuBrowserScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Bottom Bar with View Cart Quick Action
-            Card(
-                colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.5.dp, NeoBorder),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onStopNarration()
-                        onOpenCart()
-                    }
+            // Sequential Bottom Pop-ups after menu is scanned/loaded
+            AnimatedVisibility(
+                visible = bottomPopupState != MenuBottomPopupState.DISMISSED,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            contentAlignment = Alignment.Center,
+                when (bottomPopupState) {
+                    MenuBottomPopupState.READY_TO_ORDER -> {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.5.dp, NeoBorder),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(NeoPrimaryContainer)
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.ShoppingCart,
-                                contentDescription = null,
-                                tint = NeoPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "Ready to Order?",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = NeoTextPrimary
-                            )
-                            Text(
-                                text = "Tap to review items in voice cart",
-                                fontSize = 12.sp,
-                                color = NeoTextSecondary
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(NeoPrimaryContainer)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ShoppingCart,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "Ready to Order",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoTextPrimary
+                                        )
+                                        Text(
+                                            text = "Review items in cart & order",
+                                            fontSize = 12.sp,
+                                            color = NeoTextSecondary
+                                        )
+                                    }
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Button(
+                                        onClick = {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            onStopNarration()
+                                            onOpenCart()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeoPrimary),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "View Cart",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoOnPrimary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            bottomPopupState = MenuBottomPopupState.COMPARE_DISHES
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = NeoTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Open Cart",
-                        tint = NeoPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    MenuBottomPopupState.COMPARE_DISHES -> {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.5.dp, NeoPrimary.copy(alpha = 0.5f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(NeoPrimaryContainer)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.CompareArrows,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "Compare Dishes",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoTextPrimary
+                                        )
+                                        Text(
+                                            text = "Compare dishes by spice level and price, then order",
+                                            fontSize = 11.sp,
+                                            color = NeoTextSecondary,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Button(
+                                        onClick = {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            onStopNarration()
+                                            onOpenCompare()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeoPrimary),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "Open Compare",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoOnPrimary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            bottomPopupState = MenuBottomPopupState.DISMISSED
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = NeoTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    MenuBottomPopupState.DISMISSED -> {
+                        // Dismissed
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
         }
     }
 }
