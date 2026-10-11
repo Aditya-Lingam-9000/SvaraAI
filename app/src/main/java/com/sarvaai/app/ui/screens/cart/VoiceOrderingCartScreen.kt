@@ -1,5 +1,6 @@
 package com.sarvaai.app.ui.screens.cart
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -40,6 +42,7 @@ import com.sarvaai.app.data.entities.CartItemEntity
 import com.sarvaai.app.data.entities.OrderAuditEntity
 import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.llm.models.StructuredAiResponse
+import com.sarvaai.app.service.wakeword.WakeWordDetector
 import com.sarvaai.app.ui.components.AccessibleButton
 import com.sarvaai.app.ui.components.LiveCaptionBar
 import com.sarvaai.app.ui.theme.*
@@ -67,6 +70,7 @@ fun VoiceOrderingCartScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cartItems by cartDao.getCartItems().collectAsState(initial = emptyList())
     val isRecording by audioRecorder.isRecording.collectAsState()
@@ -220,6 +224,23 @@ fun VoiceOrderingCartScreen(
             val recognizedText = if (asrRes is Result.Success) asrRes.data.originalTranscript.trim() else ""
 
             if (recognizedText.isNotBlank()) {
+                if (WakeWordDetector.isCloseCommand(recognizedText)) {
+                    withContext(Dispatchers.Main) {
+                        isAiProcessing = false
+                        onStopNarration()
+                        earconEngine.play(EarconType.LISTEN_STOP)
+                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                        val goodbyeMessage = WakeWordDetector.getGoodbyeMessage(selectedLanguage)
+                        onSpeakNarration(goodbyeMessage)
+                        val closeIntent = Intent(WakeWordDetector.ACTION_CLOSE_APP).apply {
+                            setPackage(context.packageName)
+                        }
+                        context.sendBroadcast(closeIntent)
+                        onClose()
+                    }
+                    return@launch
+                }
+
                 val menuContext = cartItems.joinToString(", ") { "${it.name} (qty: ${it.quantity})" }
                 val aiRes = groqClient.processSpeechIntent(recognizedText, selectedLanguage, menuContext)
                 withContext(Dispatchers.Main) {

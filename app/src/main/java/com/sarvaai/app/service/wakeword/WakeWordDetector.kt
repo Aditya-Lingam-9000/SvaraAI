@@ -16,20 +16,37 @@ object WakeWordDetector {
     private val WAKE_PHRASES_EN = listOf(
         "hey svara",
         "svara",
-        "hey swara",
+        "svare",
         "swara",
+        "sware",
+        "hey swara",
+        "hey svare",
+        "hey sware",
+        "svara open",
+        "hey svara open",
+        "swara open",
+        "hey swara open",
+        "svare open",
+        "hey svare open",
         "hello svara",
         "hello swara",
+        "hello svare",
         "hi svara",
         "hi swara",
+        "hi svare",
         "ok svara",
         "okay svara",
         "ok swara",
+        "okay swara",
+        "ok svare",
         "svara ai",
         "swara ai",
+        "svare ai",
         "sarva",
         "hey sarva",
         "sarva ai",
+        "sarva open",
+        "hey sarva open",
         "svaara",
         "swarah",
         "shwara",
@@ -47,8 +64,14 @@ object WakeWordDetector {
         "హే స్వరా",
         "స్వర",
         "స్వరా",
+        "స్వర ఓపెన్ చేయి",
+        "స్వరా ఓపెన్ చేయి",
+        "స్వర ఓపెన్",
+        "స్వరా ఓపెన్",
         "హలో స్వర",
+        "హలో స్వరా",
         "నమస్తే స్వర",
+        "నమస్తే స్వరా",
         "నమస్కారం స్వర",
         "నమస్కారం స్వరా",
         "స్వర విను",
@@ -58,22 +81,30 @@ object WakeWordDetector {
         "ఓయ్ సర్వ",
         "ఓయ్ సర్వా",
         "సర్వ",
-        "సర్వా"
+        "సర్వా",
+        "సర్వ ఓపెన్ చేయి",
+        "సర్వా ఓపెన్ చేయి"
     )
 
     private val WAKE_PHRASES_HI = listOf(
         "हे स्वरा",
         "स्वरा",
-        "नमस्ते स्वरा",
-        "हैलो स्वरा",
+        "स्वरा खोलो",
+        "स्वरा ओपन करो",
         "हे स्वर",
         "स्वर",
+        "स्वर खोलो",
+        "स्वर ओपन करो",
+        "नमस्ते स्वरा",
+        "हैलो स्वरा",
         "ओए स्वरा",
         "अरे स्वरा",
         "सुनो स्वरा",
         "स्वरा सुनो",
         "हे सर्व",
         "सर्व",
+        "सर्व खोलो",
+        "सर्व ओपन करो",
         "हे सर्वा",
         "सर्वा"
     )
@@ -85,8 +116,11 @@ object WakeWordDetector {
         "close app",
         "close the app",
         "close application",
+        "close the application",
         "exit app",
+        "exit the app",
         "exit application",
+        "exit the application",
         "exit",
         "close",
         "quit",
@@ -97,13 +131,37 @@ object WakeWordDetector {
         "stop app",
         "terminate app",
         "bye svara",
+        "bye swara",
+        "bye svare",
         "goodbye svara",
+        "goodbye swara",
         "goodbye",
         "good bye",
+        "bye",
         "svara close",
+        "swara close",
+        "svare close",
         "hey svara close",
+        "hey swara close",
+        "hey svare close",
+        "svara close app",
+        "hey svara close app",
+        "swara close app",
+        "hey swara close app",
+        "svara close the application",
+        "svare close the application",
+        "swara close the application",
+        "hey svara close the application",
+        "hey svare close the application",
+        "hey swara close the application",
+        "svara exit application",
+        "hey svara exit application",
         "close svara",
-        "exit svara"
+        "close swara",
+        "close svare",
+        "exit svara",
+        "exit swara",
+        "app close"
     )
 
     private val CLOSE_PHRASES_TE = listOf(
@@ -120,7 +178,11 @@ object WakeWordDetector {
         "యాప్ నుండి నిష్క్రమించు",
         "సెలవు",
         "యాప్ బంద్ చేయి",
-        "బంద్ చేయి"
+        "బంద్ చేయి",
+        "క్లోజ్ చెయ్యి",
+        "యాప్ క్లోజ్ చెయ్యి",
+        "close cheyyi",
+        "app close cheyyi"
     )
 
     private val CLOSE_PHRASES_HI = listOf(
@@ -140,10 +202,35 @@ object WakeWordDetector {
         "एप्लिकेशन बंद कीजिए",
         "एप्लिकेशन बंद करें",
         "बंद कर दो",
-        "ऐप बंद कर दो"
+        "ऐप बंद कर दो",
+        "app close karo",
+        "app band karo",
+        "band karo",
+        "band kar do",
+        "band kijiye",
+        "close karo"
     )
 
     val ALL_CLOSE_COMMANDS: List<String> = (CLOSE_PHRASES_EN + CLOSE_PHRASES_TE + CLOSE_PHRASES_HI).distinct()
+
+    private val CONVERSATIONAL_STRIP_TERMS = listOf(
+        // English phrases & words
+        "hey svara", "hey swara", "hey svare", "hey sarva", "heyy swara", "heyy svara",
+        "can you please", "could you please", "can you", "could you", "please",
+        "hey", "heyy", "hello", "hi", "svara", "swara", "svare", "sware", "sarva", "sarve", "now",
+        // Telugu phrases & words
+        "దయచేసి", "ఓయ్ స్వర", "ఓయ్ స్వరా", "ఓయ్ సర్వ", "ఓయ్ సర్వా", "హే స్వర", "హే స్వరా", "హే సర్వ", "హే సర్వా",
+        "స్వర", "స్వరా", "సర్వ", "సర్వా", "హే", "ఓయ్", "హలో", "నమస్తే", "నమస్కారం",
+        // Hindi phrases & words
+        "कृपया", "हे स्वरा", "हे स्वर", "हे सर्व", "हे सर्वा", "ओए स्वरा", "अरे स्वरा",
+        "स्वरा", "स्वर", "सर्व", "सर्वा", "सुनो", "हे", "ओए", "अरे", "नमस्ते"
+    )
+
+    private val FOOD_ORDER_KEYWORDS = listOf(
+        "order", "dosa", "idli", "coffee", "cart", "food", "item", "dish", "menu", "bill", "split",
+        "ఆర్డర్", "బిల్లు", "ఆహారం",
+        "खाना", "ऑर्डर", "बिल"
+    )
 
     /**
      * Normalizes text by removing punctuation, collapsing whitespace, and lowercasing.
@@ -208,6 +295,63 @@ object WakeWordDetector {
     }
 
     /**
+     * Strips conversational and polite prefixes/suffixes iteratively from normalized text.
+     */
+    fun stripConversationalTerms(text: String): String {
+        var result = text.trim()
+        var changed = true
+        while (changed) {
+            changed = false
+            for (term in CONVERSATIONAL_STRIP_TERMS) {
+                val normTerm = normalizeText(term)
+                if (normTerm.isEmpty()) continue
+                if (result == normTerm) {
+                    continue // Do not strip everything to empty
+                }
+                if (result.startsWith("$normTerm ")) {
+                    result = result.removePrefix("$normTerm ").trim()
+                    changed = true
+                }
+                if (result.endsWith(" $normTerm")) {
+                    result = result.removeSuffix(" $normTerm").trim()
+                    changed = true
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Checks if text contains any food/ordering keywords.
+     */
+    fun containsFoodOrOrderKeywords(text: String): Boolean {
+        val norm = normalizeText(text)
+        if (norm.isEmpty()) return false
+        val tokens = norm.split(" ").filter { it.isNotBlank() }
+        for (keyword in FOOD_ORDER_KEYWORDS) {
+            val normKeyword = normalizeText(keyword)
+            if (normKeyword.isEmpty()) continue
+            // Check Indic script substrings
+            if (normKeyword.any { it.code > 127 }) {
+                if (norm.contains(normKeyword)) return true
+            } else {
+                // Check English word tokens / plurals / prefixes
+                for (token in tokens) {
+                    if (token == normKeyword ||
+                        (normKeyword.length >= 4 && token.startsWith(normKeyword)) ||
+                        (normKeyword == "item" && token.startsWith("item")) ||
+                        (normKeyword == "dish" && token.startsWith("dish")) ||
+                        (normKeyword == "bill" && token.startsWith("bill"))
+                    ) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    /**
      * Checks if the given spoken text contains or matches any 'Hey Svara' wake phrase.
      */
     fun isWakeWord(text: String): Boolean {
@@ -237,11 +381,15 @@ object WakeWordDetector {
             }
         }
 
-        // 2. Token-level single word check ("svara", "swara", "sarva", "స్వర", "స్వరా", "సర్వ", "स्वरा", "सर्व")
+        // 2. Token-level single word check ("svara", "swara", "svare", "sware", "sarva", "స్వర", "స్వరా", "సర్వ", "स्वरा", "सर्व")
         val tokens = normalized.split(" ").filter { it.isNotBlank() }
         val phoneticTokens = phonetic.split(" ").filter { it.isNotBlank() }
 
-        val targetKeywords = listOf("svara", "swara", "sarva", "స్వర", "స్వరా", "సర్వ", "సర్వా", "स्वरा", "सर्व", "स्वर", "सर्वा")
+        val targetKeywords = listOf(
+            "svara", "swara", "svare", "sware", "sarva", "sarve", "svaara", "swarah", "shvara", "shwara",
+            "స్వర", "స్వరా", "సర్వ", "సర్వా",
+            "स्वरा", "सर्व", "स्वर", "सर्वा"
+        )
         for (token in tokens) {
             for (keyword in targetKeywords) {
                 if (token == keyword) return true
@@ -252,23 +400,29 @@ object WakeWordDetector {
         }
 
         for (pToken in phoneticTokens) {
-            if (pToken == "svara" || pToken == "sarva") return true
-            if (pToken.length >= 4 && levenshteinDistance(pToken, "svara") <= 1) return true
+            if (pToken in listOf("svara", "svare", "sarva", "sarve")) return true
+            if (pToken.length >= 4 && (levenshteinDistance(pToken, "svara") <= 1 || levenshteinDistance(pToken, "svare") <= 1 || levenshteinDistance(pToken, "sarva") <= 1)) return true
         }
 
         // 3. Prefix + Wake Word combination (e.g. "hey", "hello", "hi", "ok", "oye" + token ~ "svara")
-        val prefixes = listOf("hey", "heyy", "hello", "hi", "ok", "okay", "oy", "oye", "హే", "ఓయ్", "హలో", "నమస్తే", "हे", "ओए", "अरे", "सुनो", "नमस्ते")
+        val prefixes = listOf(
+            "hey", "heyy", "hello", "hi", "ok", "okay", "oy", "oye",
+            "హే", "ఓయ్", "హలో", "నమస్తే", "నమస్కారం",
+            "हे", "ओए", "अरे", "सुनो", "नमस्ते"
+        )
         for (i in 0 until tokens.size - 1) {
             val prefix = tokens[i]
             val nextToken = tokens[i + 1]
             if (prefixes.contains(prefix)) {
                 for (keyword in targetKeywords) {
-                    if (nextToken == keyword || (nextToken.length >= 4 && levenshteinDistance(nextToken, keyword) <= 1)) {
+                    if (nextToken == keyword || (nextToken.length >= 4 && keyword.length >= 4 && levenshteinDistance(nextToken, keyword) <= 1)) {
                         return true
                     }
                 }
                 val pNext = toPhoneticRepresentation(nextToken)
-                if (pNext == "svara" || pNext == "sarva" || (pNext.length >= 4 && levenshteinDistance(pNext, "svara") <= 1)) {
+                if (pNext in listOf("svara", "svare", "sarva", "sarve") ||
+                    (pNext.length >= 4 && (levenshteinDistance(pNext, "svara") <= 1 || levenshteinDistance(pNext, "svare") <= 1 || levenshteinDistance(pNext, "sarva") <= 1))
+                ) {
                     return true
                 }
             }
@@ -284,14 +438,15 @@ object WakeWordDetector {
         val normalized = normalizeText(text)
         if (normalized.isBlank()) return false
 
+        val hasFoodKeywords = containsFoodOrOrderKeywords(normalized)
+
         // 1. Direct exact match or phrase-boundary containment with any canonical close phrase
         for (closeCmd in ALL_CLOSE_COMMANDS) {
             val normCmd = normalizeText(closeCmd)
             if (normalized == normCmd) {
                 return true
             }
-            // If closeCmd has multiple words (e.g. "close app", "exit application", "యాప్ మూసివేయి", "ऐप बंद करो")
-            if (normCmd.contains(" ")) {
+            if (!hasFoodKeywords && normCmd.contains(" ")) {
                 if (normalized.startsWith("$normCmd ") ||
                     normalized.endsWith(" $normCmd") ||
                     normalized.contains(" $normCmd ")
@@ -301,37 +456,36 @@ object WakeWordDetector {
             }
         }
 
-        // 2. Strip conversational / polite prefixes or suffixes and check exact match again
-        val stripWords = listOf(
-            "please", "can you", "could you", "hey", "heyy",
-            "svara", "swara", "sarva", "hey svara", "hey swara", "hey sarva", "heyy swara",
-            "దయచేసి", "స్వర", "స్వరా", "సర్వ", "సర్వా", "ఓయ్ స్వర", "ఓయ్ సర్వ", "హే స్వర",
-            "कृपया", "स्वरा", "सर्व", "हे स्वरा", "हे सर्व", "सुनो"
-        )
-        var stripped = normalized
-        for (word in stripWords) {
-            val p = normalizeText(word)
-            if (stripped.startsWith("$p ")) {
-                stripped = stripped.removePrefix("$p ").trim()
-            }
-            if (stripped.endsWith(" $p")) {
-                stripped = stripped.removeSuffix(" $p").trim()
-            }
-        }
-
+        // 2. Strip conversational / polite prefixes or suffixes and check match again
+        val stripped = stripConversationalTerms(normalized)
         for (closeCmd in ALL_CLOSE_COMMANDS) {
             val normCmd = normalizeText(closeCmd)
             if (stripped == normCmd) {
                 return true
             }
+            if (!hasFoodKeywords && normCmd.contains(" ")) {
+                if (stripped.startsWith("$normCmd ") ||
+                    stripped.endsWith(" $normCmd") ||
+                    stripped.contains(" $normCmd ")
+                ) {
+                    return true
+                }
+            }
         }
 
-        // 3. Exact single-word commands (only when utterance has exactly 1 token or after stripping courtesies)
-        val tokens = stripped.split(" ").filter { it.isNotBlank() }
-        if (tokens.size == 1) {
-            val single = tokens.first()
-            if (single in listOf("exit", "close", "quit", "shutdown", "మూసివేయి", "మూసేయి", "నిష్క్రమించు", "సెలవు", "अलविदा", "बाय")) {
-                return true
+        // 3. Exact single-word commands (only when utterance has exactly 1 token after stripping courtesies and no food keywords)
+        if (!hasFoodKeywords) {
+            val tokens = stripped.split(" ").filter { it.isNotBlank() }
+            if (tokens.size == 1) {
+                val single = tokens.first()
+                if (single in listOf(
+                        "exit", "close", "quit", "shutdown", "bye", "goodbye",
+                        "ఆపు", "మూసివేయి", "మూసేయి", "నిష్క్రమించు", "సెలవు",
+                        "अलविदा", "एग्जिट", "बाय"
+                    )
+                ) {
+                    return true
+                }
             }
         }
 

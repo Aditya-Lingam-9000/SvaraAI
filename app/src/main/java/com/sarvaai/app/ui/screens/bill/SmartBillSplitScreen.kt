@@ -1,5 +1,6 @@
 package com.sarvaai.app.ui.screens.bill
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -46,6 +47,7 @@ import com.sarvaai.app.llm.models.StructuredAiResponse
 import com.sarvaai.app.service.bill.BillCalculator
 import com.sarvaai.app.service.bill.BillSpeechNarrator
 import com.sarvaai.app.service.bill.DinerShare
+import com.sarvaai.app.service.wakeword.WakeWordDetector
 import com.sarvaai.app.ui.components.AccessibleButton
 import com.sarvaai.app.ui.components.LiveCaptionBar
 import com.sarvaai.app.ui.theme.*
@@ -196,6 +198,23 @@ fun SmartBillSplitScreen(
                         val asrRes = asrNmtClient.transcribeAndTranslate(wavBytes, selectedLanguage)
                         val text = if (asrRes is Result.Success) asrRes.data.originalTranscript.trim() else ""
                         if (text.isNotBlank()) {
+                            if (WakeWordDetector.isCloseCommand(text)) {
+                                withContext(Dispatchers.Main) {
+                                    isAiProcessing = false
+                                    onStopNarration()
+                                    earconEngine.play(EarconType.LISTEN_STOP)
+                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                    val goodbyeMessage = WakeWordDetector.getGoodbyeMessage(selectedLanguage)
+                                    onSpeakNarration(goodbyeMessage)
+                                    val closeIntent = Intent(WakeWordDetector.ACTION_CLOSE_APP).apply {
+                                        setPackage(context.packageName)
+                                    }
+                                    context.sendBroadcast(closeIntent)
+                                    onClose()
+                                }
+                                return@launch
+                            }
+
                             val contextSummary = cartItems.joinToString(", ") { "${it.name} x${it.quantity}" }
                             val aiRes = groqClient.processSpeechIntent(text, selectedLanguage, contextSummary)
                             withContext(Dispatchers.Main) {

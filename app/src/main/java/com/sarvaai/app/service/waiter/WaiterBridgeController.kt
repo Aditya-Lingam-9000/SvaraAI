@@ -4,6 +4,7 @@ import android.util.Log
 import com.sarvaai.app.bhashini.asr.AsrNmtClient
 import com.sarvaai.app.core.result.Result
 import com.sarvaai.app.llm.GroqClient
+import com.sarvaai.app.service.wakeword.WakeWordDetector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,6 +87,7 @@ class WaiterBridgeController(
      */
     suspend fun processDinerSpeech(
         wavBytes: ByteArray,
+        onCloseCommand: (() -> Unit)? = null,
         onSpeakToStaff: (text: String, lang: String) -> Unit
     ) = withContext(Dispatchers.IO) {
         val dinerLang = _state.value.dinerLanguage
@@ -99,6 +101,14 @@ class WaiterBridgeController(
             val engTranslation = asrResult.data.englishTranslation.trim()
 
             if (originalDinerSpeech.isNotBlank()) {
+                if (WakeWordDetector.isCloseCommand(originalDinerSpeech)) {
+                    withContext(Dispatchers.Main) {
+                        _state.value = _state.value.copy(isProcessing = false)
+                        onCloseCommand?.invoke()
+                    }
+                    return@withContext
+                }
+
                 val targetStaffText = if (dinerLang == staffLang) {
                     originalDinerSpeech
                 } else {
@@ -137,6 +147,7 @@ class WaiterBridgeController(
      */
     suspend fun processStaffSpeech(
         wavBytes: ByteArray,
+        onCloseCommand: (() -> Unit)? = null,
         onSpeakToDiner: ((text: String, lang: String) -> Unit)? = null
     ) = withContext(Dispatchers.IO) {
         val staffLang = _state.value.staffLanguage
@@ -150,6 +161,14 @@ class WaiterBridgeController(
             val engTranslation = asrResult.data.englishTranslation.trim()
 
             if (originalStaffSpeech.isNotBlank()) {
+                if (WakeWordDetector.isCloseCommand(originalStaffSpeech)) {
+                    withContext(Dispatchers.Main) {
+                        _state.value = _state.value.copy(isProcessing = false)
+                        onCloseCommand?.invoke()
+                    }
+                    return@withContext
+                }
+
                 val translatedDinerText = if (staffLang == dinerLang) {
                     originalStaffSpeech
                 } else {

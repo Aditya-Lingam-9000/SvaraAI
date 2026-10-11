@@ -1,5 +1,6 @@
 package com.sarvaai.app.ui.screens.waiter
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -38,6 +40,7 @@ import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.service.waiter.PhraseBoard
 import com.sarvaai.app.service.waiter.PhraseChip
 import com.sarvaai.app.service.waiter.WaiterBridgeController
+import com.sarvaai.app.service.wakeword.WakeWordDetector
 import com.sarvaai.app.ui.components.AccessibleButton
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.launch
@@ -57,6 +60,7 @@ fun WaiterBridgeScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val controller = remember { WaiterBridgeController(asrNmtClient, groqClient) }
     val state by controller.state.collectAsState()
@@ -64,6 +68,19 @@ fun WaiterBridgeScreen(
 
     var selectedCategory by remember { mutableStateOf("DISABILITY") }
     var recordingTarget by remember { mutableStateOf<String?>(null) } // "DINER" or "STAFF"
+
+    fun handleCloseCommand(lang: String) {
+        onStopAudio()
+        earconEngine.play(EarconType.LISTEN_STOP)
+        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+        val goodbyeMessage = WakeWordDetector.getGoodbyeMessage(lang)
+        onSpeakAudio(goodbyeMessage, lang)
+        val closeIntent = Intent(WakeWordDetector.ACTION_CLOSE_APP).apply {
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(closeIntent)
+        onClose()
+    }
 
     LaunchedEffect(initialDinerLanguage, initialStaffLanguage) {
         controller.setDinerLanguage(initialDinerLanguage)
@@ -95,9 +112,15 @@ fun WaiterBridgeScreen(
                     hapticEngine.trigger(HapticPattern.CONFIRMATION)
                     earconEngine.play(EarconType.LISTEN_STOP)
                     scope.launch {
-                        controller.processDinerSpeech(wavBytes) { staffText, staffLang ->
-                            onSpeakAudio(staffText, staffLang)
-                        }
+                        controller.processDinerSpeech(
+                            wavBytes = wavBytes,
+                            onCloseCommand = {
+                                handleCloseCommand(state.dinerLanguage)
+                            },
+                            onSpeakToStaff = { staffText, staffLang ->
+                                onSpeakAudio(staffText, staffLang)
+                            }
+                        )
                     }
                     recordingTarget = null
                 },
@@ -126,10 +149,16 @@ fun WaiterBridgeScreen(
                     hapticEngine.trigger(HapticPattern.CONFIRMATION)
                     earconEngine.play(EarconType.LISTEN_STOP)
                     scope.launch {
-                        controller.processStaffSpeech(wavBytes) { dinerText, dinerLang ->
-                            // Optionally speak translated waiter message to visually impaired diners
-                            onSpeakAudio(dinerText, dinerLang)
-                        }
+                        controller.processStaffSpeech(
+                            wavBytes = wavBytes,
+                            onCloseCommand = {
+                                handleCloseCommand(state.staffLanguage)
+                            },
+                            onSpeakToDiner = { dinerText, dinerLang ->
+                                // Optionally speak translated waiter message to visually impaired diners
+                                onSpeakAudio(dinerText, dinerLang)
+                            }
+                        )
                     }
                     recordingTarget = null
                 },

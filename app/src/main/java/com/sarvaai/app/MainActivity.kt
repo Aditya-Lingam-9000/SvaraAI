@@ -643,13 +643,15 @@ fun MainAudioPlaygroundScreen(
                                 if (rawTranscript.isNotBlank() && rawTranscript.any { it.isLetterOrDigit() }) {
                                     // Voice Exit / Shutdown Command Detection
                                     if (WakeWordDetector.isCloseCommand(rawTranscript)) {
+                                        speechPlayer.stop()
+                                        activePlaygroundPlaybackJob?.cancel()
                                         val goodbyeText = WakeWordDetector.getGoodbyeMessage(selectedLanguage)
                                         currentSpokenCaption = goodbyeText
                                         earconEngine.play(EarconType.LISTEN_STOP)
                                         hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                         playSampleText(goodbyeText, selectedLanguage)
                                         scope.launch {
-                                            delay(1800L)
+                                            delay(1000L)
                                             onCloseApp()
                                         }
                                     } else {
@@ -710,8 +712,9 @@ fun MainAudioPlaygroundScreen(
     // Auto-Start Listening Trigger when awakened by 'Hey Svara' or Voice Intent
     LaunchedEffect(autoStartListeningTrigger) {
         if (autoStartListeningTrigger > 0) {
-            val listeningGreeting = WakeWordDetector.getListeningMessage(selectedLanguage)
-            playSampleText(listeningGreeting, selectedLanguage)
+            earconEngine.play(EarconType.LISTEN_START)
+            hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
+            currentSpokenCaption = "🎙️ Listening for your voice..."
             if (!isRecording) {
                 startListeningFlow()
             }

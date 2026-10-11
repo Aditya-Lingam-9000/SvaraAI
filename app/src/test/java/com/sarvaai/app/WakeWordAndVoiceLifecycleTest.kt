@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * Unit tests for WakeWordDetector:
- * - Multilingual wake word detection ('Hey Svara', 'హే స్వరా', 'हे स्वरा')
+ * - Multilingual wake word detection ('Hey Svara', 'హే స్వరా', 'हे स्वरा', 'svare', 'swara', 'స్వరా ఓపెన్ చేయి', 'स्वरा खोलो')
  * - Voice shutdown and close commands across English, Telugu, Hindi
  * - False positive rejection for normal conversation and restaurant ordering sentences
  */
@@ -24,8 +24,17 @@ class WakeWordAndVoiceLifecycleTest {
             "hey swara",
             "svara",
             "swara",
+            "svare",
+            "sware",
             "Svara",
             "Swara",
+            "Svare",
+            "Sware",
+            "Svara open",
+            "Hey Svara open",
+            "hey swara open",
+            "sarva",
+            "hey sarva",
             "Ok Svara",
             "ok swara",
             "Hi Svara",
@@ -51,6 +60,11 @@ class WakeWordAndVoiceLifecycleTest {
             "హే స్వర",
             "స్వర",
             "స్వరా",
+            "స్వర ఓపెన్ చేయి",
+            "స్వరా ఓపెన్ చేయి",
+            "సర్వ",
+            "హే సర్వ",
+            "ఓయ్ సర్వ",
             "నమస్కారం స్వర",
             "నమస్కారం స్వరా",
             "స్వరా విను",
@@ -69,6 +83,10 @@ class WakeWordAndVoiceLifecycleTest {
             "हे स्वरा",
             "हे स्वर",
             "स्वरा",
+            "स्वरा खोलो",
+            "स्वरा ओपन करो",
+            "सर्व",
+            "हे सर्व",
             "ओए स्वरा",
             "अरे स्वरा",
             "सुनो स्वरा",
@@ -90,8 +108,14 @@ class WakeWordAndVoiceLifecycleTest {
             "CLOSE APP",
             "close the app",
             "close application",
+            "close the application",
+            "svara close the application",
+            "svare close the application",
+            "hey svara close app",
             "exit application",
+            "exit the application",
             "exit app",
+            "exit the app",
             "exit",
             "close",
             "quit",
@@ -99,10 +123,20 @@ class WakeWordAndVoiceLifecycleTest {
             "shut down",
             "shutdown",
             "shut down app",
+            "stop app",
             "goodbye",
+            "bye",
             "bye svara",
+            "bye swara",
             "goodbye svara",
+            "svara close",
+            "swara close",
+            "hey svara close",
+            "hey swara close",
             "svara close app",
+            "close svara",
+            "exit svara",
+            "app close",
             "please close app",
             "hey svara exit application"
         )
@@ -126,9 +160,13 @@ class WakeWordAndVoiceLifecycleTest {
             "యాప్ నుండి నిష్క్రమించు",
             "సెలవు",
             "యాప్ ఆపు",
+            "ఆపు",
             "యాప్ బంద్ చేయి",
+            "బంద్ చేయి",
             "దయచేసి యాప్ మూసివేయి",
-            "స్వరా యాప్ క్లోజ్ చేయి"
+            "స్వరా యాప్ క్లోజ్ చేయి",
+            "close cheyyi",
+            "app close cheyyi"
         )
 
         for (cmd in variations) {
@@ -148,12 +186,19 @@ class WakeWordAndVoiceLifecycleTest {
             "बाहर निकलो",
             "ऐप से बाहर निकलो",
             "अलविदा",
+            "एग्जिट",
             "बाय",
             "बाय स्वरा",
             "एप्लिकेशन बंद करो",
             "एप्लिकेशन बंद कीजिए",
             "कृपया ऐप बंद करो",
-            "स्वरा ऐप बंद करो"
+            "स्वरा ऐप बंद करो",
+            "app close karo",
+            "app band karo",
+            "band karo",
+            "band kar do",
+            "band kijiye",
+            "close karo"
         )
 
         for (cmd in variations) {

@@ -1,5 +1,6 @@
 package com.sarvaai.app.service.wakeword
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -14,6 +15,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -72,6 +74,30 @@ class SvaraWakeWordService : Service() {
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.i(TAG, "SvaraWakeWordService onTaskRemoved - scheduling alarm manager revival")
+        try {
+            val restartServiceIntent = Intent(applicationContext, SvaraWakeWordService::class.java).apply {
+                action = ACTION_START_SERVICE
+            }
+            val restartServicePendingIntent = PendingIntent.getService(
+                applicationContext,
+                1,
+                restartServiceIntent,
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarmManager?.set(
+                AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 1000L,
+                restartServicePendingIntent
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule service restart onTaskRemoved: ${e.message}", e)
+        }
+    }
+
     private fun startAsForeground() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L /* 10 mins */)
@@ -105,10 +131,11 @@ class SvaraWakeWordService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Svara Hotword Listener",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Continuous background listening for Hey Svara voice trigger"
-                setShowBadge(false)
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             notificationManager?.createNotificationChannel(channel)
@@ -118,8 +145,13 @@ class SvaraWakeWordService : Service() {
     private fun buildPersistentNotification(): Notification {
         // Quick Action: Open Svara App
         val openIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             putExtra(EXTRA_AUTO_START_LISTENING, true)
+            putExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, true)
+            putExtra("EXTRA_AUTO_START_LISTENING", true)
         }
         val openPendingIntent = PendingIntent.getActivity(
             this,
@@ -145,7 +177,7 @@ class SvaraWakeWordService : Service() {
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(android.R.drawable.ic_btn_speak_now, "🎙️ Open Svara", openPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "🛑 Stop", stopPendingIntent)
@@ -208,10 +240,17 @@ class SvaraWakeWordService : Service() {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
             putExtra(RecognizerIntent.EXTRA_SUPPORTED_LANGUAGES, arrayListOf("en-IN", "hi-IN", "te-IN"))
+            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("hi-IN", "te-IN", "en-IN"))
         }
 
         try {
+            try {
+                recognizer.cancel()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error cancelling recognizer before start: ${e.message}")
+            }
             isCurrentlyRecognizing = true
             recognizer.startListening(recognizerIntent)
             Log.d(TAG, "SpeechRecognizer continuous loop started")
@@ -244,6 +283,11 @@ class SvaraWakeWordService : Service() {
             override fun onError(error: Int) {
                 Log.d(TAG, "SpeechRecognizer onError: $error")
                 isCurrentlyRecognizing = false
+                try {
+                    speechRecognizer?.cancel()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error cancelling speech recognizer on error: ${e.message}")
+                }
                 if (!isListeningActive) return
 
                 val delay = when (error) {
@@ -254,7 +298,7 @@ class SvaraWakeWordService : Service() {
                 }
 
                 errorRetryCount++
-                if (errorRetryCount > 5) {
+                if (errorRetryCount > 3 || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
                     errorRetryCount = 0
                     mainHandler.postDelayed({
                         if (isListeningActive) {
@@ -316,23 +360,52 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun triggerWakeWordDetected() {
+        Log.i(TAG, "Triggering wake word detected: bringing MainActivity to foreground and starting listening")
         val launchIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             putExtra(EXTRA_AUTO_START_LISTENING, true)
+            putExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, true)
+            putExtra("EXTRA_AUTO_START_LISTENING", true)
         }
 
-        val pendingIntent = PendingIntent.getActivity(
+        val fullScreenPendingIntent = PendingIntent.getActivity(
             this,
             REQUEST_CODE_OPEN,
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Create high-priority full-screen intent notification
+        val fullScreenNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Svara Voice Triggered")
+            .setContentText("Listening for your voice...")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         try {
-            pendingIntent.send()
+            notificationManager?.notify(WAKE_NOTIFICATION_ID, fullScreenNotification)
+        } catch (e: Exception) {
+            Log.w(TAG, "Notification notify error: ${e.message}")
+        }
+
+        try {
+            fullScreenPendingIntent.send()
         } catch (e: Exception) {
             Log.w(TAG, "PendingIntent send failed, launching direct startActivity: ${e.message}")
-            startActivity(launchIntent)
+            try {
+                startActivity(launchIntent)
+            } catch (ex: Exception) {
+                Log.e(TAG, "startActivity failed: ${ex.message}", ex)
+            }
         }
     }
 
@@ -378,6 +451,7 @@ class SvaraWakeWordService : Service() {
 
         const val CHANNEL_ID = "svara_wakeword_channel"
         const val NOTIFICATION_ID = 2001
+        const val WAKE_NOTIFICATION_ID = 2002
         private const val REQUEST_CODE_OPEN = 101
         private const val REQUEST_CODE_STOP = 102
 
