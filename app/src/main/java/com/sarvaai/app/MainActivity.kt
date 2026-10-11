@@ -289,11 +289,6 @@ class MainActivity : ComponentActivity() {
                                     SvaraWakeWordService.stopService(this@MainActivity)
                                 }
                             },
-                            isHighContrast = isHighContrast,
-                            onToggleHighContrast = {
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                                isHighContrast = !isHighContrast
-                            },
                             onOpenApiKeyDialog = {
                                 hapticEngine.trigger(HapticPattern.CLICK)
                                 showApiKeyDialog = true
@@ -636,8 +631,6 @@ fun NeomorphicTopAppBar(
     onLanguageSelected: (String) -> Unit,
     isWakeWordActive: Boolean,
     onToggleWakeWord: () -> Unit,
-    isHighContrast: Boolean,
-    onToggleHighContrast: () -> Unit,
     onOpenApiKeyDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -728,32 +721,6 @@ fun NeomorphicTopAppBar(
                             imageVector = Icons.Default.Hearing,
                             contentDescription = null,
                             tint = if (isWakeWordActive) VegGreenOnContainer else NeoTextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // High Contrast Toggle
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .neomorphicSurface(
-                                shape = CircleShape,
-                                surfaceColor = if (isHighContrast) NeoPrimaryContainer else NeoSurface,
-                                borderColor = if (isHighContrast) NeoPrimary else NeoBorder,
-                                elevation = 3.dp,
-                                cornerRadius = 19.dp
-                            )
-                            .clickable(onClick = onToggleHighContrast)
-                            .semantics {
-                                contentDescription = "Toggle high contrast mode"
-                                role = Role.Button
-                            }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Contrast,
-                            contentDescription = null,
-                            tint = if (isHighContrast) NeoPrimary else NeoTextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -863,13 +830,13 @@ fun NeomorphicBottomNavBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
                 .neomorphicSurface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(30.dp),
                     surfaceColor = NeoSurface,
                     borderColor = NeoBorder,
                     elevation = 4.dp,
-                    cornerRadius = 20.dp
+                    cornerRadius = 30.dp
                 )
                 .padding(horizontal = 4.dp, vertical = 4.dp)
         ) {
@@ -900,9 +867,9 @@ fun NeomorphicBottomNavBar(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
+                            .height(44.dp)
                             .scale(scale)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(20.dp))
                             .background(if (isSelected) NeoPrimaryContainer else Color.Transparent)
                             .clickable(
                                 interactionSource = interactionSource,
@@ -922,13 +889,13 @@ fun NeomorphicBottomNavBar(
                                 imageVector = tab.icon,
                                 contentDescription = null,
                                 tint = if (isSelected) NeoPrimary else NeoTextSecondary,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(1.dp))
                             Text(
                                 text = tab.title,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
                                 color = if (isSelected) NeoPrimary else NeoTextSecondary,
                                 maxLines = 1
                             )
@@ -1499,7 +1466,7 @@ fun MainAudioPlaygroundScreen(
                             Text(
                                 text = label,
                                 fontSize = 13.sp,
-                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 color = if (isCurrent) NeoOnPrimary else NeoTextPrimary,
                                 textAlign = TextAlign.Center
                             )
@@ -1511,137 +1478,7 @@ fun MainAudioPlaygroundScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // =========================================================================
-            // 4. QUICK VOICE ASSISTANT AUDIO PROMPTS
-            // =========================================================================
-            NeomorphicCard(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.RecordVoiceOver,
-                        contentDescription = null,
-                        tint = NeoPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Quick Voice Assistant Prompts",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NeoTextPrimary
-                    )
-                }
-
-                Text(
-                    text = "Synthesize language-native scenarios in the selected active language",
-                    fontSize = 12.sp,
-                    color = NeoTextSecondary,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    NeomorphicButton(
-                        text = "Menu Intro",
-                        onClick = {
-                            val prompt = when (selectedLanguage) {
-                                "te" -> "స్వర ఏఐ కి స్వాగతం. ఈరోజు మా వద్ద వేడి వేడి మసాలా దోశ, ఇడ్లీ సాంబార్, మరియు ఫిల్టర్ కాఫీ ఉన్నాయి. మీరు ఏమి ఆర్డర్ చేయాలనుకుంటున్నారు?"
-                                "hi" -> "स्वरा एआई में आपका स्वागत है। आज हमारे पास गरमा-गरम मसाला डोसा, इडली सांभर और फ़िल्टर कॉफ़ी है। आप क्या ऑर्डर करना चाहेंगे?"
-                                else -> "Welcome to SvaraAI. Today we have hot crispy masala dosa, idli sambar, and filter coffee. What would you like to order?"
-                            }
-                            playSampleText(prompt, selectedLanguage)
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.RestaurantMenu,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        isPrimary = true
-                    )
-
-                    NeomorphicButton(
-                        text = "Confirm Order",
-                        onClick = {
-                            val prompt = when (selectedLanguage) {
-                                "te" -> "మీ రెండు మసాలా దోశలు మరియు ఒక ఫిల్టర్ కాఫీ ఆర్డర్ చేయబడ్డాయి. మొత్తం బిల్లు నూట ఎనభై రూపాయలు."
-                                "hi" -> "आपके दो मसाला डोसे और एक फ़िल्टर कॉफ़ी का ऑर्डर हो गया है। कुल राशि एक सौ अस्सी रुपये है।"
-                                else -> "Your order for two masala dosas and one filter coffee has been placed successfully. Total amount is one hundred and eighty rupees."
-                            }
-                            playSampleText(prompt, selectedLanguage)
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircleOutline,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        isPrimary = false
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    NeomorphicButton(
-                        text = "Waiter Request",
-                        onClick = {
-                            val prompt = when (selectedLanguage) {
-                                "te" -> "దయచేసి టేబుల్ నాలుగు వద్ద సహాయం కావాలి. వెయిటర్ వస్తున్నారు."
-                                "hi" -> "कृपया टेबल नंबर चार पर सहायता की आवश्यकता है। वेटर आ रहे हैं।"
-                                else -> "Assistance is requested at Table 4. A waiter will arrive shortly."
-                            }
-                            playSampleText(prompt, selectedLanguage)
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.SupportAgent,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        isPrimary = false
-                    )
-
-                    NeomorphicButton(
-                        text = "Bill Split",
-                        onClick = {
-                            val prompt = when (selectedLanguage) {
-                                "te" -> "మొత్తం బిల్లు ఐదు వందల నలభై రూపాయలు. ముగ్గురు వ్యక్తులకు ఒక్కొక్కరికి నూట ఎనభై రూపాయలు."
-                                "hi" -> "कुल बिल पांच सौ चालीस रुपये है। तीन लोगों में प्रति व्यक्ति एक सौ अस्सी रुपये बनता है।"
-                                else -> "Total bill is five hundred and forty rupees. Split equally between three diners is one hundred and eighty rupees each."
-                            }
-                            playSampleText(prompt, selectedLanguage)
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        isPrimary = false
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // =========================================================================
-            // 5. INGESTION & DIALOGUE DIAGNOSTICS CARD
+            // 4. INGESTION & DIALOGUE DIAGNOSTICS CARD
             // =========================================================================
             AnimatedVisibility(
                 visible = ingestionResult != null || structuredAiResponse != null || errorMessage != null,
@@ -1817,7 +1654,7 @@ fun MainAudioPlaygroundScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // =========================================================================
-            // 6. ACTIVE AI ENGINE STATUS & QUICK NAVIGATION
+            // 5. ACTIVE AI ENGINE STATUS & QUICK NAVIGATION
             // =========================================================================
             val hasValidKey = ApiKeyManager.hasValidGroqKey(context)
             NeomorphicCard(
@@ -1878,42 +1715,122 @@ fun MainAudioPlaygroundScreen(
 
             // Advanced Diagnostic & Jury Navigation Buttons
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                NeomorphicButton(
-                    text = "Jury Mode",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
-                    },
-                    leadingIcon = {
+                val juryInteraction = remember { MutableInteractionSource() }
+                val isJuryPressed by juryInteraction.collectIsPressedAsState()
+                val juryScale by animateFloatAsState(
+                    targetValue = if (isJuryPressed) 0.96f else 1.0f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    label = "jury_scale"
+                )
+
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .scale(juryScale)
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            surfaceColor = NeoSurface,
+                            borderColor = NeoBorder,
+                            elevation = 3.dp,
+                            isPressed = isJuryPressed,
+                            cornerRadius = 12.dp
+                        )
+                        .clickable(
+                            interactionSource = juryInteraction,
+                            indication = null,
+                            onClick = {
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                                onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
+                            }
+                        )
+                        .padding(horizontal = 8.dp)
+                        .semantics {
+                            contentDescription = "Jury Mode"
+                            role = Role.Button
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.CompareArrows,
                             contentDescription = null,
+                            tint = NeoPrimary,
                             modifier = Modifier.size(18.dp)
                         )
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = false
+                        Text(
+                            text = "Jury Mode",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                val signalsInteraction = remember { MutableInteractionSource() }
+                val isSignalsPressed by signalsInteraction.collectIsPressedAsState()
+                val signalsScale by animateFloatAsState(
+                    targetValue = if (isSignalsPressed) 0.96f else 1.0f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    label = "signals_scale"
                 )
 
-                NeomorphicButton(
-                    text = "Adaptation Signals",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.DEBUG_SIGNAL_PANEL)
-                    },
-                    leadingIcon = {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .scale(signalsScale)
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            surfaceColor = NeoSurface,
+                            borderColor = NeoBorder,
+                            elevation = 3.dp,
+                            isPressed = isSignalsPressed,
+                            cornerRadius = 12.dp
+                        )
+                        .clickable(
+                            interactionSource = signalsInteraction,
+                            indication = null,
+                            onClick = {
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                                onOpenScreen(AppScreen.DEBUG_SIGNAL_PANEL)
+                            }
+                        )
+                        .padding(horizontal = 8.dp)
+                        .semantics {
+                            contentDescription = "Adaptation Signals"
+                            role = Role.Button
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = null,
+                            tint = NeoPrimary,
                             modifier = Modifier.size(18.dp)
                         )
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = false
-                )
+                        Text(
+                            text = "Adaptation Signals",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

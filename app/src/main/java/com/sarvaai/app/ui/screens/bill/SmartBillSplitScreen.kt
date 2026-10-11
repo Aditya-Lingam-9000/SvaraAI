@@ -3,17 +3,21 @@ package com.sarvaai.app.ui.screens.bill
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -22,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -29,14 +34,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +66,7 @@ import com.sarvaai.app.service.bill.BillSpeechNarrator
 import com.sarvaai.app.service.bill.DinerShare
 import com.sarvaai.app.service.wakeword.WakeWordDetector
 import com.sarvaai.app.ui.components.LiveCaptionBar
+import com.sarvaai.app.ui.components.neomorphicSurface
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -270,7 +276,9 @@ fun SmartBillSplitScreen(
                     .padding(horizontal = 16.dp)
                     .systemBarsPadding()
             ) {
-                // Header Bar
+                // ============================================================
+                // 1. TOP HEADER BAR
+                // ============================================================
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -283,23 +291,36 @@ fun SmartBillSplitScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         // Neomorphic Circular Back Button
+                        val backInteraction = remember { MutableInteractionSource() }
+                        val isBackPressed by backInteraction.collectIsPressedAsState()
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(NeoSurface)
-                                .border(BorderStroke(1.dp, NeoBorder), CircleShape)
-                                .shadow(2.dp, CircleShape, spotColor = NeoDarkShadow, ambientColor = NeoDarkShadow)
-                                .clickable {
-                                    hapticEngine.trigger(HapticPattern.CLICK)
-                                    onStopNarration()
-                                    onClose()
+                                .size(42.dp)
+                                .neomorphicSurface(
+                                    shape = CircleShape,
+                                    surfaceColor = if (isBackPressed) NeoSurfacePressed else NeoSurface,
+                                    elevation = 4.dp,
+                                    isPressed = isBackPressed,
+                                    cornerRadius = 21.dp
+                                )
+                                .clickable(
+                                    interactionSource = backInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        onStopNarration()
+                                        onClose()
+                                    }
+                                )
+                                .semantics {
+                                    contentDescription = "Back to previous screen"
+                                    role = Role.Button
                                 }
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back to previous screen",
+                                contentDescription = null,
                                 tint = NeoTextPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -330,40 +351,69 @@ fun SmartBillSplitScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         if (isAudioPlaying) {
+                            val stopInteraction = remember { MutableInteractionSource() }
+                            val isStopPressed by stopInteraction.collectIsPressedAsState()
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(NonVegRedContainer)
-                                    .border(BorderStroke(1.dp, NonVegRed.copy(alpha = 0.3f)), CircleShape)
-                                    .clickable { onStopNarration() }
+                                    .size(40.dp)
+                                    .neomorphicSurface(
+                                        shape = CircleShape,
+                                        surfaceColor = if (isStopPressed) NonVegRedContainer.copy(alpha = 0.8f) else NonVegRedContainer,
+                                        borderColor = NonVegRed.copy(alpha = 0.4f),
+                                        elevation = 3.dp,
+                                        isPressed = isStopPressed,
+                                        cornerRadius = 20.dp
+                                    )
+                                    .clickable(
+                                        interactionSource = stopInteraction,
+                                        indication = null,
+                                        onClick = { onStopNarration() }
+                                    )
+                                    .semantics {
+                                        contentDescription = "Stop speech narration"
+                                        role = Role.Button
+                                    }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Stop,
-                                    contentDescription = "Stop speech narration",
+                                    contentDescription = null,
                                     tint = NonVegRed,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
 
+                        val closeInteraction = remember { MutableInteractionSource() }
+                        val isClosePressed by closeInteraction.collectIsPressedAsState()
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(NeoSurface)
-                                .border(BorderStroke(1.dp, NeoBorder), CircleShape)
-                                .clickable {
-                                    hapticEngine.trigger(HapticPattern.CLICK)
-                                    onStopNarration()
-                                    onClose()
+                                .size(40.dp)
+                                .neomorphicSurface(
+                                    shape = CircleShape,
+                                    surfaceColor = if (isClosePressed) NeoSurfacePressed else NeoSurface,
+                                    elevation = 4.dp,
+                                    isPressed = isClosePressed,
+                                    cornerRadius = 20.dp
+                                )
+                                .clickable(
+                                    interactionSource = closeInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        onStopNarration()
+                                        onClose()
+                                    }
+                                )
+                                .semantics {
+                                    contentDescription = "Close Bill Screen"
+                                    role = Role.Button
                                 }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Close Bill Screen",
+                                contentDescription = null,
                                 tint = NeoTextPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -371,77 +421,127 @@ fun SmartBillSplitScreen(
                     }
                 }
 
-                // Live Captions Bar
+                // ============================================================
+                // 2. LIVE CAPTION BAR
+                // ============================================================
                 LiveCaptionBar(
                     fullCaption = liveCaptionText ?: "",
                     isVisible = !liveCaptionText.isNullOrBlank(),
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
 
-                // BILL SUMMARY CARD
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                    border = BorderStroke(1.dp, NeoBorder),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                // ============================================================
+                // 3. BILL BREAKDOWN CARD
+                // ============================================================
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(20.dp),
+                            surfaceColor = NeoSurface,
+                            elevation = 5.dp,
+                            cornerRadius = 20.dp
+                        )
+                        .padding(15.dp)
                         .animateContentSize()
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column {
+                        // Title row
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.ReceiptLong,
-                                    contentDescription = null,
-                                    tint = NeoPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(NeoPrimaryContainer)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                                        contentDescription = null,
+                                        tint = NeoPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Bill Breakdown",
-                                    fontSize = 14.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = NeoTextPrimary
                                 )
                             }
-                            Text(
-                                text = "${cartItems.sumOf { it.quantity }} items",
-                                fontSize = 12.sp,
-                                color = NeoTextSecondary
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(NeoSurfacePressed)
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "${cartItems.sumOf { it.quantity }} items",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = NeoTextSecondary
+                                )
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
+                        // Subtotal line
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(text = "Subtotal", fontSize = 13.sp, color = NeoTextSecondary)
-                            Text(text = "₹${billBreakdown.subtotalRupees}", fontSize = 13.sp, color = NeoTextPrimary, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = "₹${billBreakdown.subtotalRupees}",
+                                fontSize = 14.sp,
+                                color = NeoTextPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
 
+                        Spacer(modifier = Modifier.height(5.dp))
+
+                        // CGST (2.5%) line
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(text = "CGST (2.5%)", fontSize = 12.sp, color = NeoTextSecondary)
-                            Text(text = "₹${billBreakdown.cgstRupees}", fontSize = 12.sp, color = NeoTextPrimary)
+                            Text(
+                                text = "₹${billBreakdown.cgstRupees}",
+                                fontSize = 13.sp,
+                                color = NeoTextPrimary,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
 
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // SGST (2.5%) line
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(text = "SGST (2.5%)", fontSize = 12.sp, color = NeoTextSecondary)
-                            Text(text = "₹${billBreakdown.sgstRupees}", fontSize = 12.sp, color = NeoTextPrimary)
+                            Text(
+                                text = "₹${billBreakdown.sgstRupees}",
+                                fontSize = 13.sp,
+                                color = NeoTextPrimary,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
 
+                        // Service Charge (5%) animated line
                         AnimatedVisibility(
                             visible = applyServiceCharge,
                             enter = fadeIn() + expandVertically(),
@@ -449,23 +549,33 @@ fun SmartBillSplitScreen(
                         ) {
                             Row(
                                 horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
                             ) {
                                 Text(text = "Service Charge (5%)", fontSize = 12.sp, color = NeoTextSecondary)
-                                Text(text = "₹${billBreakdown.serviceChargeRupees}", fontSize = 12.sp, color = NeoTextPrimary)
+                                Text(
+                                    text = "₹${billBreakdown.serviceChargeRupees}",
+                                    fontSize = 13.sp,
+                                    color = NeoTextPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
 
                         // Service charge toggle
+                        Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 4.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     hapticEngine.trigger(HapticPattern.CLICK)
                                     applyServiceCharge = !applyServiceCharge
                                 }
+                                .padding(vertical = 2.dp)
                         ) {
                             Checkbox(
                                 checked = applyServiceCharge,
@@ -477,7 +587,8 @@ fun SmartBillSplitScreen(
                                     checkedColor = NeoPrimary,
                                     checkmarkColor = NeoOnPrimary,
                                     uncheckedColor = NeoTextSecondary
-                                )
+                                ),
+                                modifier = Modifier.size(32.dp).padding(end = 4.dp)
                             )
                             Text(
                                 text = "Include 5% Restaurant Service Charge",
@@ -487,49 +598,71 @@ fun SmartBillSplitScreen(
                             )
                         }
 
-                        HorizontalDivider(color = NeoBorder, modifier = Modifier.padding(vertical = 6.dp))
+                        HorizontalDivider(
+                            color = NeoBorder,
+                            thickness = 1.dp,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
 
+                        // Grand Total Row with bold NeoPrimary and native price verbalization
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column {
-                                Text(text = "Grand Total", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = NeoTextPrimary)
+                                Text(
+                                    text = "Grand Total",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary
+                                )
                                 Text(
                                     text = NumberVerbalizer.verbalizePrice(billBreakdown.totalRupees, selectedLanguage),
-                                    fontSize = 11.sp,
+                                    fontSize = 12.sp,
                                     color = NeoPrimary,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                             Text(
                                 text = "₹${billBreakdown.totalRupees}",
-                                fontSize = 24.sp,
+                                fontSize = 26.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = NeoPrimary
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Spoken breakdown audio button
-                        Button(
-                            onClick = {
-                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                                earconEngine.play(EarconType.ORDER_CONFIRMED)
-                                val summary = BillSpeechNarrator.narrateBillSummary(billBreakdown, selectedLanguage)
-                                onSpeakNarration(summary)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = NeoSurfacePressed,
-                                contentColor = NeoTextPrimary
-                            ),
-                            border = BorderStroke(1.dp, NeoBorder),
+                        // Spoken breakdown audio button styled with neomorphic bevels
+                        val hearInteractionSource = remember { MutableInteractionSource() }
+                        val isHearPressed by hearInteractionSource.collectIsPressedAsState()
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 42.dp)
+                                .height(44.dp)
+                                .neomorphicSurface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    surfaceColor = if (isHearPressed) NeoSurfacePressed else NeoSurface,
+                                    elevation = 3.dp,
+                                    isPressed = isHearPressed,
+                                    cornerRadius = 14.dp
+                                )
+                                .clickable(
+                                    interactionSource = hearInteractionSource,
+                                    indication = null,
+                                    onClick = {
+                                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                        earconEngine.play(EarconType.ORDER_CONFIRMED)
+                                        val summary = BillSpeechNarrator.narrateBillSummary(billBreakdown, selectedLanguage)
+                                        onSpeakNarration(summary)
+                                    }
+                                )
+                                .semantics {
+                                    contentDescription = "Hear spoken bill breakdown"
+                                    role = Role.Button
+                                }
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -545,7 +678,8 @@ fun SmartBillSplitScreen(
                                 Text(
                                     text = "Hear Spoken Bill Breakdown",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = NeoTextPrimary
                                 )
                             }
                         }
@@ -554,13 +688,20 @@ fun SmartBillSplitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // QUICK DISH SELECTOR & ADD DISH BAR
+                // ============================================================
+                // 4. QUICK DISH ADDITION CHIPS (Compact pills with + and price)
+                // ============================================================
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 2.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.RestaurantMenu,
                             contentDescription = null,
@@ -569,7 +710,7 @@ fun SmartBillSplitScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Add Dishes:",
+                            text = "Quick Add:",
                             fontSize = 11.sp,
                             color = NeoTextSecondary,
                             fontWeight = FontWeight.Bold
@@ -578,6 +719,7 @@ fun SmartBillSplitScreen(
 
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
                         val sampleDishes = listOf(
@@ -588,31 +730,48 @@ fun SmartBillSplitScreen(
                             "Veg Biryani" to 18000L
                         )
                         items(sampleDishes) { (name, price) ->
+                            val chipInteraction = remember { MutableInteractionSource() }
+                            val isChipPressed by chipInteraction.collectIsPressedAsState()
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .height(30.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(NeoSurface)
-                                    .border(BorderStroke(1.dp, NeoBorder), RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        addItemToCart(name, price, 1)
+                                    .height(32.dp)
+                                    .neomorphicSurface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        surfaceColor = if (isChipPressed) NeoSurfacePressed else NeoSurface,
+                                        elevation = 3.dp,
+                                        isPressed = isChipPressed,
+                                        cornerRadius = 16.dp
+                                    )
+                                    .clickable(
+                                        interactionSource = chipInteraction,
+                                        indication = null,
+                                        onClick = {
+                                            addItemToCart(name, price, 1)
+                                        }
+                                    )
+                                    .padding(horizontal = 10.dp)
+                                    .semantics {
+                                        contentDescription = "Add $name for ₹${price / 100}"
+                                        role = Role.Button
                                     }
-                                    .padding(horizontal = 8.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
                                     Icon(
                                         imageVector = Icons.Default.Add,
                                         contentDescription = null,
                                         tint = NeoPrimary,
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(13.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "$name (₹${price / 100})",
                                         fontSize = 11.sp,
                                         color = NeoTextPrimary,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                             }
@@ -620,18 +779,38 @@ fun SmartBillSplitScreen(
                     }
 
                     // Manual custom add button
+                    val customAddInteraction = remember { MutableInteractionSource() }
+                    val isAddPressed by customAddInteraction.collectIsPressedAsState()
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(NeoPrimary)
-                            .shadow(2.dp, CircleShape, spotColor = NeoDarkShadow, ambientColor = NeoDarkShadow)
-                            .clickable { showManualAddDialog = true }
+                            .size(34.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = if (isAddPressed) Color(0xFF1D4ED8) else NeoPrimary,
+                                lightColor = Color(0x6693C5FD),
+                                darkColor = Color(0x661E3A8A),
+                                borderColor = Color(0xFF3B82F6),
+                                elevation = 4.dp,
+                                isPressed = isAddPressed,
+                                cornerRadius = 17.dp
+                            )
+                            .clickable(
+                                interactionSource = customAddInteraction,
+                                indication = null,
+                                onClick = {
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    showManualAddDialog = true
+                                }
+                            )
+                            .semantics {
+                                contentDescription = "Add custom item to bill"
+                                role = Role.Button
+                            }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Add custom item",
+                            contentDescription = null,
                             tint = NeoOnPrimary,
                             modifier = Modifier.size(18.dp)
                         )
@@ -640,125 +819,182 @@ fun SmartBillSplitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // SPLIT MODE TABS & PARTICIPANT COUNTER
+                // ============================================================
+                // 5. SEGMENTED SPLIT MODE SELECTOR & DINERS STEPPER
+                // ============================================================
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Neomorphic Segmented Tab Switcher
+                    // Segmented Split Mode Selector (Rounded capsule pills)
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .height(42.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeoSurfacePressed)
-                            .border(BorderStroke(1.dp, NeoBorder), RoundedCornerShape(10.dp))
-                            .padding(2.dp)
+                            .height(44.dp)
+                            .neomorphicSurface(
+                                shape = RoundedCornerShape(20.dp),
+                                surfaceColor = NeoSurfacePressed,
+                                borderColor = NeoBorder,
+                                elevation = 2.dp,
+                                isPressed = true,
+                                cornerRadius = 20.dp
+                            )
+                            .padding(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Equal Split Tab
+                        val isEqualSelected = splitMode == "EQUAL"
+                        val equalInteraction = remember { MutableInteractionSource() }
+                        val isEqualPressed by equalInteraction.collectIsPressedAsState()
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (splitMode == "EQUAL") NeoSurface else Color.Transparent)
-                                .then(
-                                    if (splitMode == "EQUAL") {
-                                        Modifier.shadow(1.dp, RoundedCornerShape(8.dp), spotColor = NeoDarkShadow, ambientColor = NeoDarkShadow)
-                                    } else Modifier
+                                .neomorphicSurface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    surfaceColor = if (isEqualSelected) NeoSurface else Color.Transparent,
+                                    lightColor = if (isEqualSelected) NeoLightShadow else Color.Transparent,
+                                    darkColor = if (isEqualSelected) NeoDarkShadow else Color.Transparent,
+                                    borderColor = if (isEqualSelected) NeoBorder else Color.Transparent,
+                                    elevation = if (isEqualSelected) 3.dp else 0.dp,
+                                    isPressed = isEqualPressed,
+                                    cornerRadius = 18.dp
                                 )
-                                .clickable {
-                                    hapticEngine.trigger(HapticPattern.CLICK)
-                                    splitMode = "EQUAL"
+                                .clickable(
+                                    interactionSource = equalInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        splitMode = "EQUAL"
+                                    }
+                                )
+                                .semantics {
+                                    contentDescription = "Equal Split mode"
+                                    role = Role.Tab
                                 }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Groups,
                                     contentDescription = null,
-                                    tint = if (splitMode == "EQUAL") NeoPrimary else NeoTextSecondary,
+                                    tint = if (isEqualSelected) NeoPrimary else NeoTextSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Equal Split",
                                     fontSize = 12.sp,
-                                    fontWeight = if (splitMode == "EQUAL") FontWeight.Bold else FontWeight.Medium,
-                                    color = if (splitMode == "EQUAL") NeoPrimary else NeoTextSecondary
+                                    fontWeight = if (isEqualSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isEqualSelected) NeoPrimary else NeoTextSecondary
                                 )
                             }
                         }
 
                         // By Items Tab
+                        val isItemSelected = splitMode == "ITEM"
+                        val itemInteraction = remember { MutableInteractionSource() }
+                        val isItemPressed by itemInteraction.collectIsPressedAsState()
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (splitMode == "ITEM") NeoSurface else Color.Transparent)
-                                .then(
-                                    if (splitMode == "ITEM") {
-                                        Modifier.shadow(1.dp, RoundedCornerShape(8.dp), spotColor = NeoDarkShadow, ambientColor = NeoDarkShadow)
-                                    } else Modifier
+                                .neomorphicSurface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    surfaceColor = if (isItemSelected) NeoSurface else Color.Transparent,
+                                    lightColor = if (isItemSelected) NeoLightShadow else Color.Transparent,
+                                    darkColor = if (isItemSelected) NeoDarkShadow else Color.Transparent,
+                                    borderColor = if (isItemSelected) NeoBorder else Color.Transparent,
+                                    elevation = if (isItemSelected) 3.dp else 0.dp,
+                                    isPressed = isItemPressed,
+                                    cornerRadius = 18.dp
                                 )
-                                .clickable {
-                                    hapticEngine.trigger(HapticPattern.CLICK)
-                                    splitMode = "ITEM"
+                                .clickable(
+                                    interactionSource = itemInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        splitMode = "ITEM"
+                                    }
+                                )
+                                .semantics {
+                                    contentDescription = "By Items Split mode"
+                                    role = Role.Tab
                                 }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.RestaurantMenu,
                                     contentDescription = null,
-                                    tint = if (splitMode == "ITEM") NeoPrimary else NeoTextSecondary,
+                                    tint = if (isItemSelected) NeoPrimary else NeoTextSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "By Items",
                                     fontSize = 12.sp,
-                                    fontWeight = if (splitMode == "ITEM") FontWeight.Bold else FontWeight.Medium,
-                                    color = if (splitMode == "ITEM") NeoPrimary else NeoTextSecondary
+                                    fontWeight = if (isItemSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isItemSelected) NeoPrimary else NeoTextSecondary
                                 )
                             }
                         }
                     }
 
-                    // Participant Stepper
+                    // Diners Stepper
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
-                            .height(42.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeoSurface)
-                            .border(BorderStroke(1.dp, NeoBorder), RoundedCornerShape(10.dp))
+                            .height(44.dp)
+                            .neomorphicSurface(
+                                shape = RoundedCornerShape(18.dp),
+                                surfaceColor = NeoSurface,
+                                elevation = 3.dp,
+                                cornerRadius = 18.dp
+                            )
                             .padding(horizontal = 6.dp)
                     ) {
+                        // Circular '-' button
+                        val decInteraction = remember { MutableInteractionSource() }
+                        val isDecPressed by decInteraction.collectIsPressedAsState()
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(NeoSurfacePressed)
-                                .clickable {
-                                    if (participantCount > 1) {
-                                        hapticEngine.trigger(HapticPattern.CLICK)
-                                        participantCount -= 1
+                                .size(30.dp)
+                                .neomorphicSurface(
+                                    shape = CircleShape,
+                                    surfaceColor = if (isDecPressed) NeoSurfacePressed else NeoSurface,
+                                    elevation = 2.dp,
+                                    isPressed = isDecPressed || participantCount <= 1,
+                                    cornerRadius = 15.dp
+                                )
+                                .clickable(
+                                    enabled = participantCount > 1,
+                                    interactionSource = decInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        if (participantCount > 1) {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            participantCount -= 1
+                                        }
                                     }
+                                )
+                                .semantics {
+                                    contentDescription = "Decrease Diners count"
+                                    role = Role.Button
                                 }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Remove,
-                                contentDescription = "Decrease Diners",
-                                tint = NeoTextPrimary,
+                                contentDescription = null,
+                                tint = if (participantCount > 1) NeoTextPrimary else NeoTextMuted,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
 
+                        // Clean Diner count badge
                         Text(
                             text = "$participantCount Diners",
                             fontSize = 12.sp,
@@ -767,23 +1003,43 @@ fun SmartBillSplitScreen(
                             modifier = Modifier.padding(horizontal = 4.dp)
                         )
 
+                        // Circular '+' button
+                        val incInteraction = remember { MutableInteractionSource() }
+                        val isIncPressed by incInteraction.collectIsPressedAsState()
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(NeoPrimaryContainer)
-                                .clickable {
-                                    if (participantCount < 10) {
-                                        hapticEngine.trigger(HapticPattern.CLICK)
-                                        participantCount += 1
+                                .size(30.dp)
+                                .neomorphicSurface(
+                                    shape = CircleShape,
+                                    surfaceColor = if (isIncPressed) Color(0xFF1D4ED8) else NeoPrimary,
+                                    lightColor = Color(0x6693C5FD),
+                                    darkColor = Color(0x661E3A8A),
+                                    borderColor = Color(0xFF3B82F6),
+                                    elevation = 3.dp,
+                                    isPressed = isIncPressed || participantCount >= 10,
+                                    cornerRadius = 15.dp
+                                )
+                                .clickable(
+                                    enabled = participantCount < 10,
+                                    interactionSource = incInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        if (participantCount < 10) {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            participantCount += 1
+                                        }
                                     }
+                                )
+                                .semantics {
+                                    contentDescription = "Increase Diners count"
+                                    role = Role.Button
                                 }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
-                                contentDescription = "Increase Diners",
-                                tint = NeoPrimary,
+                                contentDescription = null,
+                                tint = NeoOnPrimary,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -792,7 +1048,9 @@ fun SmartBillSplitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // DISHES LIST OR ITEM-BY-ITEM ASSIGNMENT
+                // ============================================================
+                // 6. DISHES LIST OR ITEM-BY-ITEM ASSIGNMENT & DINER SHARES
+                // ============================================================
                 if (cartItems.isEmpty()) {
                     Box(
                         modifier = Modifier
@@ -800,18 +1058,20 @@ fun SmartBillSplitScreen(
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Card(
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                            border = BorderStroke(1.dp, NeoBorder),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth(0.92f)
-                                .padding(16.dp)
+                                .neomorphicSurface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    surfaceColor = NeoSurface,
+                                    elevation = 4.dp,
+                                    cornerRadius = 20.dp
+                                )
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(24.dp)
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
@@ -819,10 +1079,9 @@ fun SmartBillSplitScreen(
                                         .size(60.dp)
                                         .clip(CircleShape)
                                         .background(NeoSurfacePressed)
-                                        .border(BorderStroke(1.dp, NeoBorder), CircleShape)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.ReceiptLong,
+                                        imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
                                         contentDescription = null,
                                         tint = NeoTextMuted,
                                         modifier = Modifier.size(30.dp)
@@ -855,17 +1114,19 @@ fun SmartBillSplitScreen(
                         // In Item split mode: show assignment selector
                         if (splitMode == "ITEM") {
                             item {
-                                Card(
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                                    border = BorderStroke(1.dp, NeoBorder),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(bottom = 4.dp)
+                                        .neomorphicSurface(
+                                            shape = RoundedCornerShape(18.dp),
+                                            surfaceColor = NeoSurface,
+                                            elevation = 4.dp,
+                                            cornerRadius = 18.dp
+                                        )
+                                        .padding(14.dp)
                                         .animateContentSize()
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
+                                    Column {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(
                                                 imageVector = Icons.Default.Person,
@@ -876,7 +1137,7 @@ fun SmartBillSplitScreen(
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = "Assign dishes to diner:",
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = NeoTextPrimary
                                             )
@@ -887,20 +1148,30 @@ fun SmartBillSplitScreen(
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             items((1..participantCount).toList()) { pIndex ->
                                                 val isSelected = selectedPersonForAssignment == pIndex
+                                                val personInteraction = remember { MutableInteractionSource() }
+                                                val isPersonPressed by personInteraction.collectIsPressedAsState()
                                                 Box(
                                                     contentAlignment = Alignment.Center,
                                                     modifier = Modifier
-                                                        .height(32.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(if (isSelected) NeoPrimary else NeoSurfacePressed)
-                                                        .border(
-                                                            BorderStroke(1.dp, if (isSelected) NeoPrimary else NeoBorder),
-                                                            RoundedCornerShape(8.dp)
+                                                        .height(34.dp)
+                                                        .neomorphicSurface(
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            surfaceColor = if (isSelected) NeoPrimary else if (isPersonPressed) NeoSurfacePressed else NeoSurface,
+                                                            lightColor = if (isSelected) Color(0x6693C5FD) else NeoLightShadow,
+                                                            darkColor = if (isSelected) Color(0x661E3A8A) else NeoDarkShadow,
+                                                            borderColor = if (isSelected) Color(0xFF3B82F6) else NeoBorder,
+                                                            elevation = if (isSelected) 3.dp else 2.dp,
+                                                            isPressed = isSelected || isPersonPressed,
+                                                            cornerRadius = 12.dp
                                                         )
-                                                        .clickable {
-                                                            hapticEngine.trigger(HapticPattern.CLICK)
-                                                            selectedPersonForAssignment = pIndex
-                                                        }
+                                                        .clickable(
+                                                            interactionSource = personInteraction,
+                                                            indication = null,
+                                                            onClick = {
+                                                                hapticEngine.trigger(HapticPattern.CLICK)
+                                                                selectedPersonForAssignment = pIndex
+                                                            }
+                                                        )
                                                         .padding(horizontal = 12.dp)
                                                 ) {
                                                     Text(
@@ -962,22 +1233,23 @@ fun SmartBillSplitScreen(
                         items(displayedShares, key = { it.participantIndex }) { share ->
                             val shareWords = NumberVerbalizer.verbalizePrice(share.shareRupees, selectedLanguage)
 
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                                border = BorderStroke(1.dp, NeoBorder),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .neomorphicSurface(
+                                        shape = RoundedCornerShape(18.dp),
+                                        surfaceColor = NeoSurface,
+                                        elevation = 4.dp,
+                                        cornerRadius = 18.dp
+                                    )
+                                    .padding(14.dp)
                                     .animateContentSize()
                                     .semantics(mergeDescendants = true) {
                                         contentDescription = "${share.label}, share ${share.shareRupees} rupees ($shareWords)."
                                     }
                             ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -985,25 +1257,30 @@ fun SmartBillSplitScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.weight(1f)
                                     ) {
+                                        // Person avatar circle
                                         Box(
                                             contentAlignment = Alignment.Center,
                                             modifier = Modifier
-                                                .size(38.dp)
-                                                .clip(CircleShape)
-                                                .background(NeoPrimaryContainer)
-                                                .border(BorderStroke(1.dp, NeoPrimary.copy(alpha = 0.3f)), CircleShape)
+                                                .size(42.dp)
+                                                .neomorphicSurface(
+                                                    shape = CircleShape,
+                                                    surfaceColor = NeoPrimaryContainer,
+                                                    borderColor = NeoPrimary.copy(alpha = 0.3f),
+                                                    elevation = 2.dp,
+                                                    cornerRadius = 21.dp
+                                                )
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Person,
                                                 contentDescription = null,
                                                 tint = NeoPrimary,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         }
 
                                         Spacer(modifier = Modifier.width(12.dp))
 
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = share.label,
                                                 fontSize = 15.sp,
@@ -1012,42 +1289,70 @@ fun SmartBillSplitScreen(
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = "₹${share.shareRupees} • $shareWords",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold,
+                                                text = "₹${share.shareRupees}",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.ExtraBold,
                                                 color = NeoPrimary
+                                            )
+                                            Text(
+                                                text = shareWords,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = NeoTextSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                             if (share.assignedItems.isNotEmpty()) {
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
                                                     text = "Dishes: ${share.assignedItems.joinToString(", ") { it.name }}",
                                                     fontSize = 11.sp,
-                                                    color = NeoTextSecondary,
-                                                    maxLines = 2,
+                                                    color = NeoTextMuted,
+                                                    maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         }
                                     }
 
-                                    // Hear share audio button
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Speaker button with neomorphic bevel
+                                    val speakerInteraction = remember { MutableInteractionSource() }
+                                    val isSpeakerPressed by speakerInteraction.collectIsPressedAsState()
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(NeoSurfacePressed)
-                                            .border(BorderStroke(1.dp, NeoBorder), CircleShape)
-                                            .clickable {
-                                                hapticEngine.trigger(HapticPattern.CLICK)
-                                                val text = BillSpeechNarrator.narrateDinerShare(share, selectedLanguage)
-                                                onSpeakNarration(text)
+                                            .size(38.dp)
+                                            .neomorphicSurface(
+                                                shape = CircleShape,
+                                                surfaceColor = if (isSpeakerPressed) NeoSurfacePressed else NeoSurface,
+                                                elevation = 3.dp,
+                                                isPressed = isSpeakerPressed,
+                                                cornerRadius = 19.dp
+                                            )
+                                            .clickable(
+                                                interactionSource = speakerInteraction,
+                                                indication = null,
+                                                onClick = {
+                                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                                    val text = if (splitMode == "EQUAL") {
+                                                        BillSpeechNarrator.narrateEqualSplit(billBreakdown.totalRupees, share.shareRupees, participantCount, selectedLanguage)
+                                                    } else {
+                                                        BillSpeechNarrator.narrateDinerShare(share, selectedLanguage)
+                                                    }
+                                                    onSpeakNarration(text)
+                                                }
+                                            )
+                                            .semantics {
+                                                contentDescription = "Hear share narration for ${share.label}"
+                                                role = Role.Button
                                             }
                                     ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                            contentDescription = "Hear share for ${share.label}",
-                                            tint = NeoTextPrimary,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -1059,77 +1364,124 @@ fun SmartBillSplitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // BOTTOM CONTROLS: MIC BUTTON + READ BILL + DONE
+                // ============================================================
+                // 7. BOTTOM ACTION BAR: MIC + READ BILL + DONE CONFIRMATION
+                // ============================================================
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
                 ) {
-                    // Voice Mic Button for direct voice ordering/modification on bill screen
+                    // Circular Mic Button with recording state animation
+                    val micInteraction = remember { MutableInteractionSource() }
+                    val isMicPressed by micInteraction.collectIsPressedAsState()
+
+                    val infiniteTransition = rememberInfiniteTransition(label = "mic_bottom_pulse")
+                    val pulseScale by infiniteTransition.animateFloat(
+                        initialValue = 1.0f,
+                        targetValue = 1.25f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 1000, easing = LinearOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "pulse_scale"
+                    )
+
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isRecording) NonVegRed
-                                else if (isAiProcessing) NeoSurfacePressed
-                                else NeoPrimaryContainer
-                            )
-                            .border(
-                                BorderStroke(
-                                    1.5.dp,
-                                    if (isRecording) NonVegRed
-                                    else if (isAiProcessing) NeoBorder
-                                    else NeoPrimary.copy(alpha = 0.4f)
-                                ),
-                                CircleShape
-                            )
-                            .shadow(
-                                elevation = if (isRecording) 6.dp else 2.dp,
-                                shape = CircleShape,
-                                spotColor = if (isRecording) NonVegRed.copy(alpha = 0.5f) else NeoDarkShadow,
-                                ambientColor = NeoDarkShadow
-                            )
-                            .clickable {
-                                if (isRecording) {
-                                    audioRecorder?.stopRecording()
-                                } else {
-                                    startListening()
-                                }
-                            }
-                            .semantics {
-                                contentDescription = if (isRecording) "Stop listening" else "Speak to add dishes or split bill"
-                            }
+                        modifier = Modifier.size(54.dp)
                     ) {
-                        if (isAiProcessing) {
-                            CircularProgressIndicator(color = NeoPrimary, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(
-                                imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                                contentDescription = null,
-                                tint = if (isRecording) NeoOnPrimary else NeoPrimary,
-                                modifier = Modifier.size(24.dp)
+                        if (isRecording) {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .scale(pulseScale)
+                                    .clip(CircleShape)
+                                    .background(NonVegRed.copy(alpha = 0.25f))
                             )
+                        }
+
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .neomorphicSurface(
+                                    shape = CircleShape,
+                                    surfaceColor = when {
+                                        isRecording -> NonVegRed
+                                        isAiProcessing -> NeoSurfacePressed
+                                        else -> NeoSurface
+                                    },
+                                    lightColor = if (isRecording) Color(0x66FFFFFF) else NeoLightShadow,
+                                    darkColor = if (isRecording) Color(0x4D000000) else NeoDarkShadow,
+                                    borderColor = if (isRecording) NonVegRed else NeoBorder,
+                                    elevation = if (isRecording) 6.dp else 4.dp,
+                                    isPressed = isMicPressed || isRecording,
+                                    cornerRadius = 26.dp
+                                )
+                                .clickable(
+                                    interactionSource = micInteraction,
+                                    indication = null,
+                                    onClick = {
+                                        if (isRecording) {
+                                            audioRecorder?.stopRecording()
+                                        } else {
+                                            startListening()
+                                        }
+                                    }
+                                )
+                                .semantics {
+                                    contentDescription = if (isRecording) "Stop listening" else "Speak to add dishes or split bill"
+                                    role = Role.Button
+                                }
+                        ) {
+                            if (isAiProcessing) {
+                                CircularProgressIndicator(
+                                    color = NeoPrimary,
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = if (isRecording) NeoOnPrimary else NeoPrimary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
 
-                    // Read Out Bill Button
-                    Button(
-                        onClick = {
-                            hapticEngine.trigger(HapticPattern.CLICK)
-                            val summary = BillSpeechNarrator.narrateBillSummary(billBreakdown, selectedLanguage)
-                            onSpeakNarration(summary)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeoSurfacePressed,
-                            contentColor = NeoTextPrimary
-                        ),
-                        border = BorderStroke(1.dp, NeoBorder),
+                    // Read Bill Button
+                    val readInteraction = remember { MutableInteractionSource() }
+                    val isReadPressed by readInteraction.collectIsPressedAsState()
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .weight(1f)
-                            .height(54.dp)
+                            .height(52.dp)
+                            .neomorphicSurface(
+                                shape = RoundedCornerShape(16.dp),
+                                surfaceColor = if (isReadPressed) NeoSurfacePressed else NeoSurface,
+                                elevation = 4.dp,
+                                isPressed = isReadPressed,
+                                cornerRadius = 16.dp
+                            )
+                            .clickable(
+                                interactionSource = readInteraction,
+                                indication = null,
+                                onClick = {
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    val summary = BillSpeechNarrator.narrateBillSummary(billBreakdown, selectedLanguage)
+                                    onSpeakNarration(summary)
+                                }
+                            )
+                            .semantics {
+                                contentDescription = "Read bill breakdown out loud"
+                                role = Role.Button
+                            }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1145,28 +1497,44 @@ fun SmartBillSplitScreen(
                             Text(
                                 text = "Read Bill",
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextPrimary
                             )
                         }
                     }
 
-                    // Done Button
-                    Button(
-                        onClick = {
-                            hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                            earconEngine.play(EarconType.ORDER_CONFIRMED)
-                            onStopNarration()
-                            onClose()
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NeoPrimary,
-                            contentColor = NeoOnPrimary
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp),
+                    // Done Confirmation Button
+                    val doneInteraction = remember { MutableInteractionSource() }
+                    val isDonePressed by doneInteraction.collectIsPressedAsState()
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .weight(1.2f)
-                            .height(54.dp)
+                            .weight(1.3f)
+                            .height(52.dp)
+                            .neomorphicSurface(
+                                shape = RoundedCornerShape(16.dp),
+                                surfaceColor = if (isDonePressed) Color(0xFF1D4ED8) else NeoPrimary,
+                                lightColor = Color(0x6693C5FD),
+                                darkColor = Color(0x661E3A8A),
+                                borderColor = Color(0xFF3B82F6),
+                                elevation = 5.dp,
+                                isPressed = isDonePressed,
+                                cornerRadius = 16.dp
+                            )
+                            .clickable(
+                                interactionSource = doneInteraction,
+                                indication = null,
+                                onClick = {
+                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                    earconEngine.play(EarconType.ORDER_CONFIRMED)
+                                    onStopNarration()
+                                    onClose()
+                                }
+                            )
+                            .semantics {
+                                contentDescription = "Done bill split. Total is ₹${billBreakdown.totalRupees}"
+                                role = Role.Button
+                            }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1182,16 +1550,19 @@ fun SmartBillSplitScreen(
                             Text(
                                 text = "Done (₹${billBreakdown.totalRupees})",
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = NeoOnPrimary
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
-            // Manual Add Item Dialog
+            // ============================================================
+            // 8. MANUAL ADD ITEM DIALOG
+            // ============================================================
             if (showManualAddDialog) {
                 var manualName by remember { mutableStateOf("") }
                 var manualPrice by remember { mutableStateOf("") }
@@ -1231,7 +1602,7 @@ fun SmartBillSplitScreen(
                                     focusedLabelColor = NeoPrimary,
                                     unfocusedLabelColor = NeoTextSecondary
                                 ),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(modifier = Modifier.height(10.dp))
@@ -1247,7 +1618,7 @@ fun SmartBillSplitScreen(
                                     focusedLabelColor = NeoPrimary,
                                     unfocusedLabelColor = NeoTextSecondary
                                 ),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -1261,7 +1632,7 @@ fun SmartBillSplitScreen(
                                 }
                                 showManualAddDialog = false
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = NeoPrimary,
                                 contentColor = NeoOnPrimary

@@ -10,11 +10,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,14 +29,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -43,7 +52,8 @@ import com.sarvaai.app.audio.haptics.HapticFeedbackEngine
 import com.sarvaai.app.audio.haptics.HapticPattern
 import com.sarvaai.app.menu.extractor.MenuExtractor
 import com.sarvaai.app.menu.extractor.ParsedMenuResult
-import com.sarvaai.app.ui.components.AccessibleButton
+import com.sarvaai.app.ui.components.NeomorphicCard
+import com.sarvaai.app.ui.components.neomorphicSurface
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -231,83 +241,21 @@ fun CameraXMenuCaptureScreen(
         color = NeoBackground
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (hasCameraPermission) {
-                AndroidView(
-                    factory = { ctx ->
-                        val previewView = PreviewView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            scaleType = PreviewView.ScaleType.FILL_CENTER
-                        }
-
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-
-                            val capture = ImageCapture.Builder()
-                                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                                .build()
-                            imageCaptureUseCase = capture
-
-                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                            try {
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    capture
-                                )
-                            } catch (e: Exception) {
-                                Log.e("CameraXScreen", "Camera binding failed", e)
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-
-                        previewView
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // High Contrast Framing Target Box with Neomorphic corner style
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp, vertical = 84.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(0.68f)
-                            .border(
-                                width = 3.dp,
-                                color = NeoPrimary,
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                    )
-                }
-            }
-
-            // Top Header Card Overlay (Neomorphic White Card)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = NeoSurface.copy(alpha = 0.95f)),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.5.dp, NeoBorder),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .systemBarsPadding()
+                    .fillMaxSize()
+                    .systemBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                // 1. Top Header Card (Neomorphic Card)
+                NeomorphicCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    cornerRadius = 18.dp,
+                    elevation = 4.dp
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -320,8 +268,8 @@ fun CameraXMenuCaptureScreen(
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
                                     .background(NeoPrimaryContainer)
                             ) {
                                 Icon(
@@ -331,14 +279,24 @@ fun CameraXMenuCaptureScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Menu Vision Capture",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = NeoTextPrimary,
-                                modifier = Modifier.semantics { heading() }
-                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Menu Vision Capture",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary,
+                                    modifier = Modifier.semantics { heading() }
+                                )
+                                Text(
+                                    text = statusText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = NeoTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
 
                         IconButton(
@@ -360,79 +318,120 @@ fun CameraXMenuCaptureScreen(
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = statusText,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = NeoTextSecondary,
-                        textAlign = TextAlign.Start
-                    )
                 }
-            }
 
-            // Processing Vision Full Screen Modal Overlay
-            if (isProcessingVision) {
+                // 2. Dedicated Central Viewfinder Card (Strictly contained, zero camera bleed)
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.60f)),
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(24.dp),
+                            surfaceColor = Color(0xFF0F172A),
+                            lightColor = NeoLightShadow,
+                            darkColor = NeoDarkShadow,
+                            borderColor = NeoPrimary,
+                            borderWidth = 2.5.dp,
+                            elevation = 6.dp,
+                            cornerRadius = 24.dp
+                        )
+                        .clip(RoundedCornerShape(24.dp))
+                        .border(2.5.dp, NeoPrimary, RoundedCornerShape(24.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                        shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(2.dp, NeoPrimary),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    if (hasCameraPermission) {
+                        AndroidView(
+                            factory = { ctx ->
+                                val previewView = PreviewView(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                scaleType = PreviewView.ScaleType.FILL_CENTER
+                            }
+
+                            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                            cameraProviderFuture.addListener({
+                                val cameraProvider = cameraProviderFuture.get()
+
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+
+                                val capture = ImageCapture.Builder()
+                                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                                    .build()
+                                imageCaptureUseCase = capture
+
+                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                                try {
+                                    cameraProvider.unbindAll()
+                                    cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        cameraSelector,
+                                        preview,
+                                        capture
+                                    )
+                                } catch (e: Exception) {
+                                    Log.e("CameraXScreen", "Camera binding failed", e)
+                                }
+                            }, ContextCompat.getMainExecutor(ctx))
+
+                            previewView
+                        },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp)
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(24.dp))
+                    )
+
+                    // Subtle inner framing guideline
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(20.dp)
+                            .border(
+                                width = 1.dp,
+                                color = NeoPrimary.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                    )
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(24.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                color = NeoPrimary,
-                                strokeWidth = 4.dp,
-                                modifier = Modifier.size(56.dp)
-                            )
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Text(
-                                text = "Extracting Menu with AI Vision",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = NeoTextPrimary,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Categorizing dishes, prices, and dietary information accurately...",
-                                fontSize = 13.sp,
-                                color = NeoTextSecondary,
-                                textAlign = TextAlign.Center
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = NeoTextMuted,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Camera permission is required to capture menus",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
 
-            // Bottom Shutter Controls Card Overlay (Neomorphic White)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = NeoSurface.copy(alpha = 0.95f)),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.5.dp, NeoBorder),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            // 3. Bottom Controls Area (Neomorphic Card with 68dp shutter and 2 equal-width action buttons)
+            NeomorphicCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-                    .systemBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                shape = RoundedCornerShape(20.dp),
+                cornerRadius = 20.dp,
+                elevation = 5.dp
             ) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     errorMessage?.let { err ->
@@ -442,80 +441,225 @@ fun CameraXMenuCaptureScreen(
                             color = NonVegRed,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 10.dp)
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
 
+                    // Center: Large 68dp Neomorphic Capture Button
+                    NeomorphicShutterButton(
+                        onClick = { capturePhoto() },
+                        isProcessing = isCapturing || isProcessingVision,
+                        enabled = hasCameraPermission && !isProcessingVision && !isCapturing
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Row below shutter: 2 equal-width 48dp action buttons
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Manual Capture Button (72dp circular accessible tap target)
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(68.dp)
-                                .clip(CircleShape)
-                                .background(if (isProcessingVision) NeoSurfacePressed else NeoPrimary)
-                                .border(2.5.dp, NeoPrimaryContainer, CircleShape)
-                                .clickable(enabled = !isProcessingVision && !isCapturing) {
-                                    capturePhoto()
-                                }
-                                .semantics {
-                                    contentDescription = "Capture Menu Photo"
-                                }
-                        ) {
-                            if (isCapturing || isProcessingVision) {
-                                CircularProgressIndicator(color = NeoOnPrimary, modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.CameraAlt,
-                                    contentDescription = null,
-                                    tint = NeoOnPrimary,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                        }
-
-                        // Gallery Upload Button
-                        AccessibleButton(
+                        // Button 1: "Upload Photo"
+                        NeomorphicMenuActionButton(
                             text = "Upload Photo",
-                            onClick = {
-                                galleryLauncher.launch("image/*")
-                            },
-                            modifier = Modifier.weight(1f),
-                            isPrimary = false,
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.UploadFile,
-                                    contentDescription = null,
-                                    tint = NeoTextPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            icon = Icons.Default.UploadFile,
+                            onClick = { galleryLauncher.launch("image/*") },
+                            enabled = !isProcessingVision && !isCapturing,
+                            modifier = Modifier.weight(1f)
                         )
 
-                        // Load Sample Restaurant Menu Button
-                        AccessibleButton(
+                        // Button 2: "Sample Menu"
+                        NeomorphicMenuActionButton(
                             text = "Sample Menu",
-                            onClick = {
-                                processCapturedBytes(ByteArray(0))
-                            },
-                            modifier = Modifier.weight(1f),
-                            isPrimary = false,
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.RestaurantMenu,
-                                    contentDescription = null,
-                                    tint = NeoTextPrimary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            icon = Icons.Default.RestaurantMenu,
+                            onClick = { processCapturedBytes(ByteArray(0)) },
+                            enabled = !isProcessingVision && !isCapturing,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
             }
+        }
+
+        // Processing Vision Full Screen Modal Overlay
+        if (isProcessingVision) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.60f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(2.dp, NeoPrimary),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = NeoPrimary,
+                            strokeWidth = 4.dp,
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "Extracting Menu with AI Vision",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Categorizing dishes, prices, and dietary information accurately...",
+                            fontSize = 13.sp,
+                            color = NeoTextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+}
+
+@Composable
+private fun NeomorphicShutterButton(
+    onClick: () -> Unit,
+    isProcessing: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.93f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "shutter_scale"
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(68.dp)
+            .scale(scale)
+            .neomorphicSurface(
+                shape = CircleShape,
+                surfaceColor = if (isProcessing) NeoSurfacePressed else NeoPrimary,
+                lightColor = Color(0x6693C5FD),
+                darkColor = Color(0x661E3A8A),
+                borderColor = Color(0xFF3B82F6),
+                borderWidth = 2.5.dp,
+                elevation = 6.dp,
+                isPressed = isPressed && enabled,
+                cornerRadius = 34.dp
+            )
+            .clickable(
+                enabled = enabled && !isProcessing,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .semantics {
+                contentDescription = "Capture Menu Photo"
+                role = Role.Button
+            }
+    ) {
+        if (isProcessing) {
+            CircularProgressIndicator(
+                color = NeoOnPrimary,
+                modifier = Modifier.size(28.dp),
+                strokeWidth = 3.dp
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.CameraAlt,
+                contentDescription = null,
+                tint = NeoOnPrimary,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NeomorphicMenuActionButton(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) 0.96f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "action_btn_scale"
+    )
+
+    val shape = RoundedCornerShape(14.dp)
+    val buttonSurfaceColor = if (isPressed && enabled) NeoSurfacePressed else NeoSurface
+    val contentColor = if (enabled) NeoTextPrimary else NeoTextMuted
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(48.dp)
+            .scale(scale)
+            .neomorphicSurface(
+                shape = shape,
+                surfaceColor = buttonSurfaceColor,
+                lightColor = NeoLightShadow,
+                darkColor = NeoDarkShadow,
+                borderColor = NeoBorder,
+                borderWidth = 1.dp,
+                elevation = 3.dp,
+                isPressed = isPressed && enabled,
+                cornerRadius = 14.dp
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 8.dp)
+            .semantics(mergeDescendants = true) {
+                this.contentDescription = text
+                role = Role.Button
+            }
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (enabled) NeoPrimary else NeoTextMuted,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = contentColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

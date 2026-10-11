@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -338,9 +339,20 @@ fun NeomorphicMicButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
+    // Smooth responsive interpolation for microphone audio amplitude
+    val smoothedAmplitude by animateFloatAsState(
+        targetValue = if (isRecording) amplitude.coerceIn(0f, 1f) else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "mic_amplitude"
+    )
+
     // Pulsing circular wave animation for active recording / processing
     val infiniteTransition = rememberInfiniteTransition(label = "mic_waves")
 
+    // Concentric Ring 1: Inner Wave Pulse
     val pulseScale1 by infiniteTransition.animateFloat(
         initialValue = 1.0f,
         targetValue = 1.45f,
@@ -351,7 +363,7 @@ fun NeomorphicMicButton(
         label = "pulse_scale_1"
     )
     val pulseAlpha1 by infiniteTransition.animateFloat(
-        initialValue = 0.55f,
+        initialValue = 0.65f,
         targetValue = 0.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1400, easing = LinearOutSlowInEasing),
@@ -360,25 +372,47 @@ fun NeomorphicMicButton(
         label = "pulse_alpha_1"
     )
 
+    // Concentric Ring 2: Middle Wave Pulse (Staggered phase delay)
     val pulseScale2 by infiniteTransition.animateFloat(
         initialValue = 1.0f,
-        targetValue = 1.65f,
+        targetValue = 1.80f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800, delayMillis = 400, easing = LinearOutSlowInEasing),
+            animation = tween(durationMillis = 1800, delayMillis = 350, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "pulse_scale_2"
     )
     val pulseAlpha2 by infiniteTransition.animateFloat(
-        initialValue = 0.45f,
+        initialValue = 0.50f,
         targetValue = 0.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800, delayMillis = 400, easing = LinearOutSlowInEasing),
+            animation = tween(durationMillis = 1800, delayMillis = 350, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "pulse_alpha_2"
     )
 
+    // Concentric Ring 3: Outer Wave Pulse (Further staggered phase delay)
+    val pulseScale3 by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 2.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, delayMillis = 700, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulse_scale_3"
+    )
+    val pulseAlpha3 by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, delayMillis = 700, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulse_alpha_3"
+    )
+
+    // Smooth glowing spin rotation for processing state
     val spinRotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -398,32 +432,122 @@ fun NeomorphicMicButton(
     val dynamicScale by animateFloatAsState(
         targetValue = when {
             isPressed -> 0.94f
-            isRecording -> 1.0f + (amplitude.coerceIn(0f, 1f) * 0.14f)
+            isRecording -> 1.0f + (smoothedAmplitude * 0.15f)
             else -> 1.0f
         },
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
         label = "mic_dyn_scale"
     )
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.size(130.dp)
+        modifier = modifier.size(140.dp)
     ) {
-        // Outer pulsing ripple waves
-        if (isRecording || isProcessing) {
+        // 3 concentric animated ripple rings with staggered phase delays and alpha gradients
+        if (isRecording) {
+            // Ring 3 (Outermost Sonic Ripple)
             Box(
                 modifier = Modifier
                     .size(96.dp)
-                    .scale(pulseScale2)
+                    .scale(pulseScale3 + (smoothedAmplitude * 0.45f))
                     .clip(CircleShape)
-                    .background(waveColor.copy(alpha = pulseAlpha2))
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                waveColor.copy(alpha = (pulseAlpha3 * 0.35f).coerceIn(0f, 1f)),
+                                waveColor.copy(alpha = (pulseAlpha3 * 0.15f).coerceIn(0f, 1f)),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        color = waveColor.copy(alpha = (pulseAlpha3 * 0.75f).coerceIn(0f, 1f)),
+                        shape = CircleShape
+                    )
+            )
+
+            // Ring 2 (Middle Sonic Ripple)
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .scale(pulseScale2 + (smoothedAmplitude * 0.35f))
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                waveColor.copy(alpha = (pulseAlpha2 * 0.45f).coerceIn(0f, 1f)),
+                                waveColor.copy(alpha = (pulseAlpha2 * 0.20f).coerceIn(0f, 1f)),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .border(
+                        width = 2.dp,
+                        color = waveColor.copy(alpha = (pulseAlpha2 * 0.85f).coerceIn(0f, 1f)),
+                        shape = CircleShape
+                    )
+            )
+
+            // Ring 1 (Innermost Sonic Ripple)
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .scale(pulseScale1 + (smoothedAmplitude * 0.25f))
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                waveColor.copy(alpha = (pulseAlpha1 * 0.55f).coerceIn(0f, 1f)),
+                                waveColor.copy(alpha = (pulseAlpha1 * 0.25f).coerceIn(0f, 1f)),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .border(
+                        width = 2.dp,
+                        color = waveColor.copy(alpha = pulseAlpha1.coerceIn(0f, 1f)),
+                        shape = CircleShape
+                    )
+            )
+        } else if (isProcessing) {
+            // Smooth glowing spin ring for processing state
+            Box(
+                modifier = Modifier
+                    .size(108.dp)
+                    .rotate(spinRotation)
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(
+                                    NeoPrimary.copy(alpha = 0.0f),
+                                    NeoPrimary.copy(alpha = 0.35f),
+                                    NeoPrimary,
+                                    Color.White,
+                                    NeoPrimary,
+                                    NeoPrimary.copy(alpha = 0.0f)
+                                )
+                            ),
+                            style = Stroke(width = 3.dp.toPx())
+                        )
+                    }
             )
             Box(
                 modifier = Modifier
                     .size(96.dp)
                     .scale(pulseScale1)
                     .clip(CircleShape)
-                    .background(waveColor.copy(alpha = pulseAlpha1))
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                NeoPrimary.copy(alpha = (pulseAlpha1 * 0.35f).coerceIn(0f, 1f)),
+                                Color.Transparent
+                            )
+                        )
+                    )
             )
         }
 
@@ -592,15 +716,15 @@ fun NeomorphicLanguageSelector(
         modifier = modifier
             .fillMaxWidth()
             .neomorphicSurface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(24.dp),
                 surfaceColor = NeoSurfacePressed,
                 borderColor = NeoBorder,
                 elevation = 2.dp,
                 isPressed = true,
-                cornerRadius = 16.dp
+                cornerRadius = 24.dp
             )
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         languages.forEach { (code, nativeName, shortCode) ->
@@ -617,23 +741,24 @@ fun NeomorphicLanguageSelector(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp)
+                    .height(42.dp)
                     .scale(scale)
                     .neomorphicSurface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(20.dp),
                         surfaceColor = if (isSelected) NeoPrimary else NeoSurface,
                         lightColor = if (isSelected) Color(0x6693C5FD) else NeoLightShadow,
                         darkColor = if (isSelected) Color(0x661E3A8A) else NeoDarkShadow,
                         borderColor = if (isSelected) NeoPrimary else NeoBorder,
                         elevation = if (isSelected) 3.dp else 2.dp,
                         isPressed = !isSelected && isPressed,
-                        cornerRadius = 12.dp
+                        cornerRadius = 20.dp
                     )
                     .clickable(
                         interactionSource = interactionSource,
                         indication = null,
                         onClick = { onLanguageSelected(code) }
                     )
+                    .padding(horizontal = 8.dp)
                     .semantics {
                         contentDescription = "$nativeName language option ($shortCode)"
                         role = Role.Tab
