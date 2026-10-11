@@ -1,5 +1,7 @@
 package com.sarvaai.app.ui.screens.debug
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,9 +45,14 @@ fun DebugSignalPanel(
     val isOverridden by inferenceEngine.isUserOverridden.collectAsState()
     val announcement by inferenceEngine.lastAnnouncedReason.collectAsState()
 
+    // Safe Back handling
+    BackHandler {
+        onClose()
+    }
+
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = CharcoalBackground
+        color = NeoBackground
     ) {
         Column(
             modifier = Modifier
@@ -61,59 +68,121 @@ fun DebugSignalPanel(
                     .fillMaxWidth()
                     .padding(vertical = 12.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "🛠️ Dynamic Adaptation Debug",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SaffronPrimary,
-                        modifier = Modifier.semantics { heading() }
-                    )
-                    Text(
-                        text = "Real-time Signal Injection & Hysteresis Profiling",
-                        fontSize = 12.sp,
-                        color = SubtitleText
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeoPrimaryContainer)
+                            .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Dynamic Adaptation Debug",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary,
+                            modifier = Modifier.semantics { heading() }
+                        )
+                        Text(
+                            text = "Real-time Signal Injection & Hysteresis Profiling",
+                            fontSize = 12.sp,
+                            color = NeoTextSecondary
+                        )
+                    }
                 }
 
                 IconButton(
                     onClick = {
                         hapticEngine.trigger(HapticPattern.CLICK)
                         onClose()
-                    }
+                    },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(NeoSurface)
+                        .border(1.dp, NeoBorder, CircleShape)
                 ) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close Debug Panel", tint = PureWhite)
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close Debug Panel",
+                        tint = NeoTextPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 
             // Announcement Banner if adaptation active
             announcement?.let { msg ->
-                Box(
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = NeoPrimaryContainer),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, NeoPrimary),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SaffronPrimary.copy(alpha = 0.15f))
-                        .border(1.dp, SaffronPrimary, RoundedCornerShape(8.dp))
-                        .padding(10.dp)
+                        .padding(bottom = 10.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "📢 Active Adaptation Announcement", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SaffronPrimary)
-                            Text(text = msg, fontSize = 12.sp, color = PureWhite)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Campaign,
+                                contentDescription = null,
+                                tint = NeoPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Active Adaptation Announcement",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoPrimary
+                                )
+                                Text(
+                                    text = msg,
+                                    fontSize = 12.sp,
+                                    color = NeoTextPrimary
+                                )
+                            }
                         }
                         IconButton(
                             onClick = { inferenceEngine.undoAdaptation() },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(NeoSurface)
+                                .border(1.dp, NeoBorder, CircleShape)
                         ) {
-                            Icon(imageVector = Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo adaptation", tint = HighContrastYellow)
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Undo,
+                                contentDescription = "Undo adaptation",
+                                tint = NeoPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
             }
 
             LazyColumn(
@@ -122,12 +191,17 @@ fun DebugSignalPanel(
             ) {
                 // Section 1: Quick Simulation Presets
                 item {
-                    Text(text = "1. Simulation Presets (Jury Testing)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HighContrastYellow)
+                    Text(
+                        text = "1. Simulation Presets (Jury Testing)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         AccessibleButton(
-                            text = "👁️ Simulate Blind Diner (TalkBack Active)",
+                            text = "Simulate Blind Diner (TalkBack Active)",
                             onClick = {
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                 inferenceEngine.resetOverride()
@@ -137,11 +211,19 @@ fun DebugSignalPanel(
                                 inferenceEngine.evaluate(signalCollector.signals.value)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            isPrimary = activeFlags.voiceFirst
+                            isPrimary = activeFlags.voiceFirst,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = if (activeFlags.voiceFirst) NeoOnPrimary else NeoTextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         )
 
                         AccessibleButton(
-                            text = "🧏 Simulate Deaf Diner (Muted + Captions)",
+                            text = "Simulate Deaf Diner (Muted + Captions)",
                             onClick = {
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                 inferenceEngine.resetOverride()
@@ -151,11 +233,19 @@ fun DebugSignalPanel(
                                 inferenceEngine.evaluate(signalCollector.signals.value)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            isPrimary = activeFlags.captionsOn
+                            isPrimary = activeFlags.captionsOn,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.HearingDisabled,
+                                    contentDescription = null,
+                                    tint = if (activeFlags.captionsOn) NeoOnPrimary else NeoTextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         )
 
                         AccessibleButton(
-                            text = "🗣️ Simulate Speech Difficulty (ASR Failures x3)",
+                            text = "Simulate Speech Difficulty (ASR Failures x3)",
                             onClick = {
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                 inferenceEngine.resetOverride()
@@ -165,11 +255,19 @@ fun DebugSignalPanel(
                                 inferenceEngine.evaluate(signalCollector.signals.value)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            isPrimary = activeFlags.phraseBoard
+                            isPrimary = activeFlags.phraseBoard,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.MicOff,
+                                    contentDescription = null,
+                                    tint = if (activeFlags.phraseBoard) NeoOnPrimary else NeoTextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         )
 
                         AccessibleButton(
-                            text = "👴 Simulate Elderly Diner (1.5x Font + Taps)",
+                            text = "Simulate Elderly Diner (1.5x Font + Taps)",
                             onClick = {
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                 inferenceEngine.resetOverride()
@@ -179,7 +277,15 @@ fun DebugSignalPanel(
                                 inferenceEngine.evaluate(signalCollector.signals.value)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            isPrimary = activeFlags.largeText || activeFlags.slowTts
+                            isPrimary = activeFlags.largeText || activeFlags.slowTts,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.FormatSize,
+                                    contentDescription = null,
+                                    tint = if (activeFlags.largeText || activeFlags.slowTts) NeoOnPrimary else NeoTextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         )
 
                         Row(
@@ -187,17 +293,25 @@ fun DebugSignalPanel(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             AccessibleButton(
-                                text = "↩️ Undo Adaptation",
+                                text = "Undo Adaptation",
                                 onClick = {
                                     hapticEngine.trigger(HapticPattern.CLICK)
                                     inferenceEngine.undoAdaptation()
                                 },
                                 modifier = Modifier.weight(1f),
-                                isPrimary = false
+                                isPrimary = false,
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                                        contentDescription = null,
+                                        tint = NeoTextPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             )
 
                             AccessibleButton(
-                                text = "🔄 Reset All",
+                                text = "Reset All",
                                 onClick = {
                                     hapticEngine.trigger(HapticPattern.CLICK)
                                     signalCollector.resetAll()
@@ -205,7 +319,15 @@ fun DebugSignalPanel(
                                     inferenceEngine.evaluate(signalCollector.signals.value)
                                 },
                                 modifier = Modifier.weight(1f),
-                                isPrimary = false
+                                isPrimary = false,
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = NeoTextPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             )
                         }
                     }
@@ -213,17 +335,25 @@ fun DebugSignalPanel(
 
                 // Section 2: Hysteresis Scoring Status
                 item {
-                    Text(text = "2. Weighted Hysteresis Scores (Threshold: 40/70)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HighContrastYellow)
+                    Text(
+                        text = "2. Weighted Hysteresis Scores (Threshold: 40/70)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(CharcoalSurface)
-                            .padding(12.dp)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.5.dp, NeoBorder),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             ScoreRow("Visual Score", inferenceEngine.visualScore, activeFlags.voiceFirst)
                             ScoreRow("Hearing Score", inferenceEngine.hearingScore, activeFlags.captionsOn)
                             ScoreRow("Speech Score", inferenceEngine.speechScore, activeFlags.phraseBoard)
@@ -234,17 +364,25 @@ fun DebugSignalPanel(
 
                 // Section 3: Active Dynamic Feature Flags
                 item {
-                    Text(text = "3. Active Dynamic Feature Flags", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HighContrastYellow)
+                    Text(
+                        text = "3. Active Dynamic Feature Flags",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(CharcoalSurface)
-                            .padding(12.dp)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.5.dp, NeoBorder),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             FlagRow("voiceFirst", "Auto-activate voice flow", activeFlags.voiceFirst) {
                                 inferenceEngine.setManualFlags(activeFlags.copy(voiceFirst = it))
                             }
@@ -269,17 +407,25 @@ fun DebugSignalPanel(
 
                 // Section 4: Raw Collected System Signals
                 item {
-                    Text(text = "4. Raw Telemetry Signals", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = HighContrastYellow)
+                    Text(
+                        text = "4. Raw Telemetry Signals",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(CharcoalSurface)
-                            .padding(12.dp)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.5.dp, NeoBorder),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             SignalItem("Touch Exploration (TalkBack)", currentSignals.isTouchExplorationOn.toString())
                             SignalItem("System Captioning", currentSignals.isSystemCaptioningOn.toString())
                             SignalItem("Media Stream Muted", currentSignals.isMediaMuted.toString())
@@ -293,7 +439,7 @@ fun DebugSignalPanel(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
@@ -305,20 +451,20 @@ private fun ScoreRow(label: String, score: Int, isActive: Boolean) {
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(text = label, fontSize = 13.sp, color = PureWhite)
+        Text(text = label, fontSize = 13.sp, color = NeoTextPrimary, fontWeight = FontWeight.Medium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "$score / 100",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (score >= 70) SaffronPrimary else if (score >= 40) HighContrastYellow else SubtitleText
+                color = if (score >= 70) NeoPrimary else if (score >= 40) JainYellow else NeoTextSecondary
             )
             Spacer(modifier = Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(if (isActive) VegGreen else Color.Gray)
+                    .background(if (isActive) VegGreen else NeoTextMuted)
             )
         }
     }
@@ -332,17 +478,22 @@ private fun FlagRow(flagName: String, description: String, isChecked: Boolean, o
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = flagName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isChecked) SaffronPrimary else PureWhite)
-            Text(text = description, fontSize = 11.sp, color = SubtitleText)
+            Text(
+                text = flagName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isChecked) NeoPrimary else NeoTextPrimary
+            )
+            Text(text = description, fontSize = 11.sp, color = NeoTextSecondary)
         }
         Switch(
             checked = isChecked,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = PureWhite,
-                checkedTrackColor = SaffronPrimary,
-                uncheckedThumbColor = Color.LightGray,
-                uncheckedTrackColor = CharcoalSurfaceVariant
+                checkedThumbColor = NeoOnPrimary,
+                checkedTrackColor = NeoPrimary,
+                uncheckedThumbColor = NeoTextSecondary,
+                uncheckedTrackColor = NeoSurfacePressed
             )
         )
     }
@@ -354,7 +505,7 @@ private fun SignalItem(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(text = label, fontSize = 12.sp, color = SubtitleText)
-        Text(text = value, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = PureWhite)
+        Text(text = label, fontSize = 12.sp, color = NeoTextSecondary)
+        Text(text = value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeoTextPrimary)
     }
 }

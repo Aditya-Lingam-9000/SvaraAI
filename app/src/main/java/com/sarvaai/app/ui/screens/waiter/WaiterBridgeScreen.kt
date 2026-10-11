@@ -1,8 +1,10 @@
 package com.sarvaai.app.ui.screens.waiter
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +15,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Accessible
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -35,13 +42,11 @@ import com.sarvaai.app.audio.haptics.HapticFeedbackEngine
 import com.sarvaai.app.audio.haptics.HapticPattern
 import com.sarvaai.app.audio.recorder.AudioRecorder
 import com.sarvaai.app.bhashini.asr.AsrNmtClient
-import com.sarvaai.app.bhashini.matrix.CapabilityMatrix
 import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.service.waiter.PhraseBoard
 import com.sarvaai.app.service.waiter.PhraseChip
 import com.sarvaai.app.service.waiter.WaiterBridgeController
 import com.sarvaai.app.service.wakeword.WakeWordDetector
-import com.sarvaai.app.ui.components.AccessibleButton
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -68,6 +73,12 @@ fun WaiterBridgeScreen(
 
     var selectedCategory by remember { mutableStateOf("DISABILITY") }
     var recordingTarget by remember { mutableStateOf<String?>(null) } // "DINER" or "STAFF"
+
+    // BackHandler to safely return to home
+    BackHandler {
+        onStopAudio()
+        onClose()
+    }
 
     fun handleCloseCommand(lang: String) {
         onStopAudio()
@@ -155,7 +166,6 @@ fun WaiterBridgeScreen(
                                 handleCloseCommand(state.staffLanguage)
                             },
                             onSpeakToDiner = { dinerText, dinerLang ->
-                                // Optionally speak translated waiter message to visually impaired diners
                                 onSpeakAudio(dinerText, dinerLang)
                             }
                         )
@@ -173,7 +183,7 @@ fun WaiterBridgeScreen(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = CharcoalBackground
+        color = NeoBackground
     ) {
         Column(
             modifier = Modifier
@@ -189,81 +199,138 @@ fun WaiterBridgeScreen(
                     .fillMaxWidth()
                     .padding(vertical = 10.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "🧑‍🍳 Waiter Bridge (Phase 10)",
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SaffronPrimary,
-                        modifier = Modifier.semantics { heading() }
-                    )
-                    Text(
-                        text = "Cross-Language Dual-Screen Staff Interaction",
-                        fontSize = 12.sp,
-                        color = SubtitleText
-                    )
-                }
-
-                // Flip Card Button (for waiter standing across table)
-                IconButton(
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        controller.toggleFlipForStaff()
-                    },
-                    modifier = Modifier
-                        .padding(end = 4.dp)
-                        .size(36.dp)
-                        .background(if (state.isFlippedForStaff) SaffronPrimary else CharcoalSurfaceVariant, CircleShape)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Flip,
-                        contentDescription = "Flip staff card for waiter viewing",
-                        tint = if (state.isFlippedForStaff) SaffronOnPrimary else PureWhite,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                if (isAudioPlaying) {
-                    IconButton(
-                        onClick = onStopAudio,
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(36.dp)
-                            .background(NonVegRed.copy(alpha = 0.2f), CircleShape)
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeoPrimaryContainer)
+                            .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
                     ) {
-                        Icon(imageVector = Icons.Default.Stop, contentDescription = "Stop speech playback", tint = NonVegRed)
+                        Icon(
+                            imageVector = Icons.Default.SupportAgent,
+                            contentDescription = null,
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Waiter Bridge",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary,
+                            modifier = Modifier.semantics { heading() }
+                        )
+                        Text(
+                            text = "Cross-Language Staff Communication",
+                            fontSize = 12.sp,
+                            color = NeoTextSecondary
+                        )
                     }
                 }
 
-                IconButton(
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onStopAudio()
-                        onClose()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Flip Card Button
+                    IconButton(
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            controller.toggleFlipForStaff()
+                        },
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(if (state.isFlippedForStaff) NeoPrimary else NeoSurface)
+                            .border(1.dp, NeoBorder, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Flip,
+                            contentDescription = "Flip staff card for waiter viewing",
+                            tint = if (state.isFlippedForStaff) NeoOnPrimary else NeoTextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                ) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close Waiter Bridge", tint = PureWhite)
+
+                    if (isAudioPlaying) {
+                        IconButton(
+                            onClick = onStopAudio,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(NonVegRedContainer)
+                                .border(1.dp, NonVegRed, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop speech playback",
+                                tint = NonVegRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            onStopAudio()
+                            onClose()
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(NeoSurface)
+                            .border(1.dp, NeoBorder, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Waiter Bridge",
+                            tint = NeoTextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
             // Language Selector Row (Diner Lang <-> Staff Lang)
             Card(
-                colors = CardDefaults.cardColors(containerColor = CharcoalSurface),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, Color(0xFF333333), RoundedCornerShape(10.dp))
+                colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.5.dp, NeoBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(8.dp),
+                        .padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Diner Lang Selector
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "🗣️ You Speak / Read", fontSize = 11.sp, color = SubtitleText, fontWeight = FontWeight.Medium)
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = NeoPrimary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "You Speak / Read",
+                                fontSize = 11.sp,
+                                color = NeoTextSecondary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("te" to "తెలుగు", "hi" to "हिंदी", "en" to "Eng").forEach { (code, label) ->
                                 val isSelected = state.dinerLanguage == code
@@ -271,9 +338,14 @@ fun WaiterBridgeScreen(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(30.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (isSelected) SaffronPrimary else CharcoalSurfaceVariant)
+                                        .height(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) NeoPrimary else NeoSurfacePressed)
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) NeoPrimary else NeoBorder,
+                                            RoundedCornerShape(8.dp)
+                                        )
                                         .clickable {
                                             hapticEngine.trigger(HapticPattern.CLICK)
                                             controller.setDinerLanguage(code)
@@ -282,8 +354,8 @@ fun WaiterBridgeScreen(
                                     Text(
                                         text = label,
                                         fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) SaffronOnPrimary else PureWhite
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) NeoOnPrimary else NeoTextPrimary
                                     )
                                 }
                             }
@@ -291,16 +363,32 @@ fun WaiterBridgeScreen(
                     }
 
                     Icon(
-                        imageVector = Icons.Default.ArrowForward,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "to",
-                        tint = SaffronPrimary,
-                        modifier = Modifier.padding(horizontal = 6.dp).size(16.dp)
+                        tint = NeoPrimary,
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp)
+                            .size(18.dp)
                     )
 
                     // Staff Lang Selector
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "🧑‍🍳 Staff Reads / Hears", fontSize = 11.sp, color = SubtitleText, fontWeight = FontWeight.Medium)
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Badge,
+                                contentDescription = null,
+                                tint = Color(0xFF0D9488),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Staff Reads / Hears",
+                                fontSize = 11.sp,
+                                color = NeoTextSecondary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("hi" to "हिंदी", "te" to "తెలుగు", "en" to "Eng").forEach { (code, label) ->
                                 val isSelected = state.staffLanguage == code
@@ -308,9 +396,14 @@ fun WaiterBridgeScreen(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(30.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (isSelected) Color(0xFF00ADB5) else CharcoalSurfaceVariant)
+                                        .height(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) Color(0xFF0D9488) else NeoSurfacePressed)
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) Color(0xFF0D9488) else NeoBorder,
+                                            RoundedCornerShape(8.dp)
+                                        )
                                         .clickable {
                                             hapticEngine.trigger(HapticPattern.CLICK)
                                             controller.setStaffLanguage(code)
@@ -319,8 +412,8 @@ fun WaiterBridgeScreen(
                                     Text(
                                         text = label,
                                         fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = PureWhite
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else NeoTextPrimary
                                     )
                                 }
                             }
@@ -331,12 +424,14 @@ fun WaiterBridgeScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // GIANT OUTWARD-FACING STAFF CARD (32sp+ typography, flipped option)
+            // OUTWARD-FACING STAFF CARD (Clean High-Contrast Typography, Flip Button)
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.Black),
+                colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(2.dp, NeoPrimary),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(2.5.dp, HighContrastYellow, RoundedCornerShape(14.dp))
                     .rotate(if (state.isFlippedForStaff) 180f else 0f)
                     .semantics(mergeDescendants = true) {
                         contentDescription = "Staff display showing: ${state.activeStaffCardText}"
@@ -353,13 +448,22 @@ fun WaiterBridgeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "👀 SHOW TO WAITER / STAFF",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = HighContrastYellow,
-                            letterSpacing = 1.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = NeoPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "SHOW TO WAITER / STAFF",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoPrimary,
+                                letterSpacing = 0.8.sp
+                            )
+                        }
 
                         IconButton(
                             onClick = {
@@ -367,13 +471,15 @@ fun WaiterBridgeScreen(
                                 onSpeakAudio(state.activeStaffCardText, state.staffLanguage)
                             },
                             modifier = Modifier
-                                .size(32.dp)
-                                .background(HighContrastYellow.copy(alpha = 0.2f), CircleShape)
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(NeoPrimaryContainer)
+                                .border(1.dp, NeoPrimary.copy(alpha = 0.4f), CircleShape)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.VolumeUp,
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                                 contentDescription = "Play loudly to staff",
-                                tint = HighContrastYellow,
+                                tint = NeoPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -383,11 +489,11 @@ fun WaiterBridgeScreen(
 
                     Text(
                         text = state.activeStaffCardText,
-                        fontSize = 30.sp,
+                        fontSize = 28.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = PureWhite,
+                        color = NeoTextPrimary,
                         textAlign = TextAlign.Center,
-                        lineHeight = 36.sp
+                        lineHeight = 34.sp
                     )
 
                     if (state.activeStaffCardSubtext.isNotBlank()) {
@@ -396,7 +502,7 @@ fun WaiterBridgeScreen(
                             text = state.activeStaffCardSubtext,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
-                            color = SaffronPrimary,
+                            color = NeoTextSecondary,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -405,12 +511,13 @@ fun WaiterBridgeScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // LIVE DINER CAPTION / WAITER RESPONSE BOX
+            // LIVE DINER TRANSLATION / WAITER RESPONSE CARD
             Card(
-                colors = CardDefaults.cardColors(containerColor = CharcoalSurfaceVariant),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, Color(0xFF444444), RoundedCornerShape(10.dp))
+                colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.5.dp, NeoBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -418,25 +525,39 @@ fun WaiterBridgeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "💬 LIVE TRANSLATION / WAITER REPLIES",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SaffronPrimary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = null,
+                                tint = NeoPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "LIVE TRANSLATION / WAITER REPLIES",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextSecondary,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
 
                         if (state.isProcessing) {
-                            CircularProgressIndicator(color = SaffronPrimary, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(
+                                color = NeoPrimary,
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
                         text = state.liveDinerCaption,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = PureWhite,
+                        color = NeoTextPrimary,
                         lineHeight = 22.sp
                     )
                 }
@@ -444,12 +565,12 @@ fun WaiterBridgeScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // QUICK PHRASE CATEGORIES TABS
+            // QUICK PHRASE CATEGORY TABS
             Text(
-                text = "⚡ Instant Communication Phrases",
+                text = "Instant Communication Phrases",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = SubtitleText
+                color = NeoTextPrimary
             )
             Spacer(modifier = Modifier.height(6.dp))
             LazyRow(
@@ -457,32 +578,45 @@ fun WaiterBridgeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 val categories = listOf(
-                    "DISABILITY" to "🦻 Disability Notice",
-                    "ESSENTIALS" to "💧 Water & Bill",
-                    "FOOD_PREF" to "🌶️ Food Specs",
-                    "SERVICE" to "🛎️ Table Service"
+                    Triple("DISABILITY", "Disability Notice", Icons.AutoMirrored.Filled.Accessible),
+                    Triple("ESSENTIALS", "Water & Bill", Icons.Default.LocalDrink),
+                    Triple("FOOD_PREF", "Food Specs", Icons.Default.Restaurant),
+                    Triple("SERVICE", "Table Service", Icons.Default.RoomService)
                 )
-                items(categories) { (catKey, catLabel) ->
+                items(categories) { (catKey, catLabel, icon) ->
                     val isSelected = selectedCategory == catKey
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .height(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) SaffronPrimary else CharcoalSurface)
-                            .border(1.dp, if (isSelected) SaffronPrimary else Color(0xFF444444), RoundedCornerShape(8.dp))
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) NeoPrimary else NeoSurface)
+                            .border(
+                                1.dp,
+                                if (isSelected) NeoPrimary else NeoBorder,
+                                RoundedCornerShape(10.dp)
+                            )
                             .clickable {
                                 hapticEngine.trigger(HapticPattern.CLICK)
                                 selectedCategory = catKey
                             }
-                            .padding(horizontal = 10.dp)
+                            .padding(horizontal = 12.dp)
                     ) {
-                        Text(
-                            text = catLabel,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) SaffronOnPrimary else PureWhite
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (isSelected) NeoOnPrimary else NeoTextSecondary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = catLabel,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) NeoOnPrimary else NeoTextPrimary
+                            )
+                        }
                     }
                 }
             }
@@ -503,12 +637,15 @@ fun WaiterBridgeScreen(
                 items(activePhrases, key = { it.id }) { phrase ->
                     val dinerDisplay = phrase.getTextForLanguage(state.dinerLanguage)
                     val staffDisplay = phrase.getTextForLanguage(state.staffLanguage)
+                    val phraseIcon = getPhraseMaterialIcon(phrase.iconName)
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = CharcoalSurface),
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, NeoBorder),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, Color(0xFF333333), RoundedCornerShape(10.dp))
                             .clickable {
                                 hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                 earconEngine.play(EarconType.ORDER_CONFIRMED)
@@ -527,25 +664,43 @@ fun WaiterBridgeScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(NeoSurfacePressed)
+                                    .border(1.dp, NeoBorder, RoundedCornerShape(8.dp))
+                            ) {
+                                Icon(
+                                    imageVector = phraseIcon,
+                                    contentDescription = null,
+                                    tint = NeoPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = dinerDisplay,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = PureWhite
+                                    color = NeoTextPrimary
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "🧑‍🍳 Staff will hear: \"$staffDisplay\"",
+                                    text = "Staff will hear: \"$staffDisplay\"",
                                     fontSize = 12.sp,
-                                    color = SaffronPrimary
+                                    color = NeoTextSecondary
                                 )
                             }
 
                             Icon(
-                                imageVector = Icons.Default.VolumeUp,
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                                 contentDescription = null,
-                                tint = SaffronPrimary,
+                                tint = NeoPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -567,26 +722,31 @@ fun WaiterBridgeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(54.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isDinerRecording) NonVegRed else SaffronPrimary)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (isDinerRecording) NonVegRed else NeoPrimary)
+                        .border(
+                            1.5.dp,
+                            if (isDinerRecording) NonVegRedContainer else NeoPrimaryContainer,
+                            RoundedCornerShape(14.dp)
+                        )
                         .clickable { handleDinerMicClick() }
                         .semantics {
-                            contentDescription = if (isDinerRecording) "Stop diner voice input" else "Speak custom message in ${state.dinerLanguage.uppercase()} to translate for staff"
+                            contentDescription = if (isDinerRecording) "Stop diner voice input" else "Speak message in ${state.dinerLanguage.uppercase()} to translate for staff"
                         }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = if (isDinerRecording) Icons.Default.Stop else Icons.Default.Mic,
                             contentDescription = null,
-                            tint = if (isDinerRecording) PureWhite else SaffronOnPrimary,
+                            tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isDinerRecording) "Stop & Send" else "🗣️ Speak to Staff",
+                            text = if (isDinerRecording) "Stop & Send" else "Speak to Staff",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isDinerRecording) PureWhite else SaffronOnPrimary
+                            color = Color.White
                         )
                     }
                 }
@@ -598,26 +758,31 @@ fun WaiterBridgeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(54.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isStaffRecording) NonVegRed else Color(0xFF00ADB5))
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (isStaffRecording) NonVegRed else Color(0xFF0D9488))
+                        .border(
+                            1.5.dp,
+                            if (isStaffRecording) NonVegRedContainer else Color(0xFF99F6E4),
+                            RoundedCornerShape(14.dp)
+                        )
                         .clickable { handleStaffMicClick() }
                         .semantics {
-                            contentDescription = if (isStaffRecording) "Stop staff listening" else "Hold for staff/waiter to speak in ${state.staffLanguage.uppercase()}"
+                            contentDescription = if (isStaffRecording) "Stop staff listening" else "Hold for staff to speak in ${state.staffLanguage.uppercase()}"
                         }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = if (isStaffRecording) Icons.Default.Stop else Icons.Default.Mic,
                             contentDescription = null,
-                            tint = PureWhite,
+                            tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isStaffRecording) "Stop Listening" else "🧑‍🍳 Staff Mic",
+                            text = if (isStaffRecording) "Stop Listening" else "Staff Mic",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = PureWhite
+                            color = Color.White
                         )
                     }
                 }
@@ -625,5 +790,25 @@ fun WaiterBridgeScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
         }
+    }
+}
+
+private fun getPhraseMaterialIcon(iconName: String): ImageVector {
+    return when (iconName) {
+        "hearing_disabled" -> Icons.Default.HearingDisabled
+        "visibility_off" -> Icons.Default.VisibilityOff
+        "water_drop" -> Icons.Default.WaterDrop
+        "receipt_long" -> Icons.AutoMirrored.Filled.ReceiptLong
+        "qr_code_scanner" -> Icons.Default.QrCodeScanner
+        "local_fire_department" -> Icons.Default.LocalFireDepartment
+        "no_meals" -> Icons.Default.NoMeals
+        "whatshot" -> Icons.Default.Whatshot
+        "restaurant" -> Icons.Default.Restaurant
+        "soup_kitchen" -> Icons.Default.SoupKitchen
+        "cleaning_services" -> Icons.Default.CleaningServices
+        "hourglass_top" -> Icons.Default.HourglassTop
+        "takeout_dining" -> Icons.Default.TakeoutDining
+        "wash" -> Icons.Default.Wash
+        else -> Icons.Default.ChatBubble
     }
 }

@@ -1,18 +1,17 @@
 package com.sarvaai.app.ui.screens.camera
 
 import android.Manifest
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -67,6 +66,12 @@ fun CameraXMenuCaptureScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+
+    // Safe Back handling
+    BackHandler {
+        onStopAnnouncement()
+        onClose()
+    }
 
     DisposableEffect(lifecycleOwner) {
         onDispose {
@@ -223,7 +228,7 @@ fun CameraXMenuCaptureScreen(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = CharcoalBackground
+        color = NeoBackground
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (hasCameraPermission) {
@@ -270,178 +275,245 @@ fun CameraXMenuCaptureScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // High Contrast Framing Target Box
+                // High Contrast Framing Target Box with Neomorphic corner style
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 24.dp, vertical = 80.dp),
+                        .padding(horizontal = 24.dp, vertical = 84.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxHeight(0.70f)
+                            .fillMaxHeight(0.68f)
                             .border(
                                 width = 3.dp,
-                                color = SaffronPrimary,
-                                shape = RoundedCornerShape(16.dp)
+                                color = NeoPrimary,
+                                shape = RoundedCornerShape(20.dp)
                             )
                     )
                 }
             }
 
-            // Processing Vision Full Screen Overlay
-            if (isProcessingVision) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.85f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(32.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            color = SaffronPrimary,
-                            strokeWidth = 4.dp,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = "Extracting Menu with AI Vision",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PureWhite,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Categorizing dishes, prices, and dietary information accurately...",
-                            fontSize = 14.sp,
-                            color = SubtitleText,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            // Top Header Overlay
-            Column(
+            // Top Header Card Overlay (Neomorphic White Card)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NeoSurface.copy(alpha = 0.95f)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.5.dp, NeoBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .background(Color.Black.copy(alpha = 0.75f))
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
                     .systemBarsPadding()
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Menu Capture (Phase 5)",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SaffronPrimary,
-                        modifier = Modifier.semantics { heading() }
-                    )
-
-                    IconButton(
-                        onClick = {
-                            onStopAnnouncement()
-                            onClose()
-                        },
-                        modifier = Modifier.size(44.dp)
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close Camera", tint = PureWhite)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = statusText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = HighContrastYellow,
-                    textAlign = TextAlign.Start
-                )
-            }
-
-            // Bottom Shutter Controls Overlay
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .background(Color.Black.copy(alpha = 0.90f))
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-                    .systemBarsPadding(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                errorMessage?.let { err ->
-                    Text(
-                        text = err,
-                        fontSize = 13.sp,
-                        color = NonVegRed,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // Manual Capture Button (72dp circular accessible tap target)
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(if (isProcessingVision) CharcoalSurfaceVariant else SaffronPrimary)
-                            .border(3.dp, PureWhite, CircleShape)
-                            .clickable(enabled = !isProcessingVision && !isCapturing) {
-                                capturePhoto()
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(NeoPrimaryContainer)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DocumentScanner,
+                                    contentDescription = null,
+                                    tint = NeoPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                            .semantics {
-                                contentDescription = "Capture Menu Photo"
-                            }
-                    ) {
-                        if (isCapturing || isProcessingVision) {
-                            CircularProgressIndicator(color = SaffronPrimary, modifier = Modifier.size(32.dp))
-                        } else {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Menu Vision Capture",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextPrimary,
+                                modifier = Modifier.semantics { heading() }
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                onStopAnnouncement()
+                                onClose()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(NeoSurfacePressed)
+                                .border(1.dp, NeoBorder, CircleShape)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.CameraAlt,
-                                contentDescription = null,
-                                tint = SaffronOnPrimary,
-                                modifier = Modifier.size(36.dp)
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Camera",
+                                tint = NeoTextPrimary,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
 
-                    // Gallery Upload Button
-                    AccessibleButton(
-                        text = "📁 Upload Photo",
-                        onClick = {
-                            galleryLauncher.launch("image/*")
-                        },
-                        modifier = Modifier.weight(1f),
-                        isPrimary = false
-                    )
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                    // Load Sample Restaurant Menu Button (for instant testing)
-                    AccessibleButton(
-                        text = "⚡ Sample Menu",
-                        onClick = {
-                            processCapturedBytes(ByteArray(0))
-                        },
-                        modifier = Modifier.weight(1f),
-                        isPrimary = false
+                    Text(
+                        text = statusText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = NeoTextSecondary,
+                        textAlign = TextAlign.Start
                     )
+                }
+            }
+
+            // Processing Vision Full Screen Modal Overlay
+            if (isProcessingVision) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.60f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(2.dp, NeoPrimary),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = NeoPrimary,
+                                strokeWidth = 4.dp,
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text(
+                                text = "Extracting Menu with AI Vision",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextPrimary,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Categorizing dishes, prices, and dietary information accurately...",
+                                fontSize = 13.sp,
+                                color = NeoTextSecondary,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Bottom Shutter Controls Card Overlay (Neomorphic White)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NeoSurface.copy(alpha = 0.95f)),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.5.dp, NeoBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                    .systemBarsPadding()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    errorMessage?.let { err ->
+                        Text(
+                            text = err,
+                            fontSize = 12.sp,
+                            color = NonVegRed,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Manual Capture Button (72dp circular accessible tap target)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(68.dp)
+                                .clip(CircleShape)
+                                .background(if (isProcessingVision) NeoSurfacePressed else NeoPrimary)
+                                .border(2.5.dp, NeoPrimaryContainer, CircleShape)
+                                .clickable(enabled = !isProcessingVision && !isCapturing) {
+                                    capturePhoto()
+                                }
+                                .semantics {
+                                    contentDescription = "Capture Menu Photo"
+                                }
+                        ) {
+                            if (isCapturing || isProcessingVision) {
+                                CircularProgressIndicator(color = NeoOnPrimary, modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = null,
+                                    tint = NeoOnPrimary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
+
+                        // Gallery Upload Button
+                        AccessibleButton(
+                            text = "Upload Photo",
+                            onClick = {
+                                galleryLauncher.launch("image/*")
+                            },
+                            modifier = Modifier.weight(1f),
+                            isPrimary = false,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.UploadFile,
+                                    contentDescription = null,
+                                    tint = NeoTextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        )
+
+                        // Load Sample Restaurant Menu Button
+                        AccessibleButton(
+                            text = "Sample Menu",
+                            onClick = {
+                                processCapturedBytes(ByteArray(0))
+                            },
+                            modifier = Modifier.weight(1f),
+                            isPrimary = false,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.RestaurantMenu,
+                                    contentDescription = null,
+                                    tint = NeoTextPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }

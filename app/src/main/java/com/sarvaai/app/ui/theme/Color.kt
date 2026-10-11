@@ -2,38 +2,83 @@ package com.sarvaai.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Standard Accessible Dark Palette (WCAG AAA)
-val CharcoalBackground = Color(0xFF121212)
-val CharcoalSurface = Color(0xFF1E1E1E)
-val CharcoalSurfaceVariant = Color(0xFF2A2A2A)
-val CharcoalSurfaceHighlight = Color(0xFF383838)
+// ============================================================================
+// Neomorphism Design System Color Palette (Light / Pure Off-White Theme)
+// ============================================================================
 
-val SaffronPrimary = Color(0xFFFF9933)     // Deep Indian Saffron
-val SaffronOnPrimary = Color(0xFF000000)
-val SaffronContainer = Color(0xFF4A2800)
-val SaffronOnContainer = Color(0xFFFFDDB8)
+// Neomorphic Surface & Shadow Primitives
+val NeoBackground = Color(0xFFF0F4F8)
+val NeoSurface = Color(0xFFF0F4F8)
+val NeoSurfacePressed = Color(0xFFE2E8F0)
+val NeoLightShadow = Color(0xFFFFFFFF)     // Top-Left specular reflection
+val NeoDarkShadow = Color(0xFFD1D9E6)      // Bottom-Right diffuse soft shadow
+val NeoBorder = Color(0xFFE2E8F0)          // Crisp contour edge
 
-val PureWhite = Color(0xFFFFFFFF)
-val MutedText = Color(0xFFD0D0D0)
-val SubtitleText = Color(0xFFAAAAAA)
+// Primary Accent Color (Royal Cobalt Blue)
+val NeoPrimary = Color(0xFF2563EB)
+val NeoOnPrimary = Color(0xFFFFFFFF)
+val NeoPrimaryContainer = Color(0xFFDBEAFE)
+val NeoOnPrimaryContainer = Color(0xFF1E40AF)
 
-// Dietary Color Primitives (Strict High Contrast)
-val VegGreen = Color(0xFF00C853)           // High-contrast emerald veg
-val VegGreenContainer = Color(0xFF003914)
-val VegGreenOnContainer = Color(0xFF7CFF9B)
+// Neomorphic Dark Typography Palette (Slate Scale)
+val NeoTextPrimary = Color(0xFF0F172A)     // Slate 900
+val NeoTextSecondary = Color(0xFF475569)   // Slate 600
+val NeoTextMuted = Color(0xFF94A3B8)       // Slate 400
 
-val NonVegRed = Color(0xFFFF3D00)          // High-contrast crimson non-veg
-val NonVegRedContainer = Color(0xFF4A0000)
-val NonVegRedOnContainer = Color(0xFFFFB4A9)
+// Semantic Dietary Colors (WCAG AAA Compliant)
+val VegGreen = Color(0xFF16A34A)           // Emerald Green (Veg)
+val VegGreenContainer = Color(0xFFDCFCE7)
+val VegGreenOnContainer = Color(0xFF15803D)
 
-val JainYellow = Color(0xFFFFD600)         // Saffron-gold Jain indicator
-val JainYellowContainer = Color(0xFF3D3200)
+val NonVegRed = Color(0xFFDC2626)          // Crimson Red (Non-Veg)
+val NonVegRedContainer = Color(0xFFFEE2E2)
+val NonVegRedOnContainer = Color(0xFFB91C1C)
 
-val SpiceRed = Color(0xFFFF5252)
+val JainYellow = Color(0xFFD97706)         // Amber Gold (Jain)
+val JainYellowContainer = Color(0xFFFEF3C7)
+val JainYellowOnContainer = Color(0xFFB45309)
 
-// High Contrast Mode (WCAG AAA Override: 14:1+)
+val SpiceRed = Color(0xFFEA580C)
+
+// High Contrast Accessibility Mode Colors
 val HighContrastBlack = Color(0xFF000000)
 val HighContrastWhite = Color(0xFFFFFFFF)
-val HighContrastYellow = Color(0xFFFFEB3B)  // Vivid luminous yellow highlight
-val HighContrastBorder = Color(0xFFFFFFFF)
-val HighContrastCardBorder = Color(0xFFFFD700)
+val HighContrastYellow = Color(0xFFFFD600)
+val HighContrastBorder = Color(0xFF0F172A)
+val HighContrastCardBorder = Color(0xFF2563EB)
+
+// ============================================================================
+// Legacy / Deprecated Color Mappings (Redirected to Neomorphic Palette)
+// ============================================================================
+@Deprecated("Use NeoBackground instead", ReplaceWith("NeoBackground"))
+val CharcoalBackground = NeoBackground
+
+@Deprecated("Use NeoSurface instead", ReplaceWith("NeoSurface"))
+val CharcoalSurface = NeoSurface
+
+@Deprecated("Use NeoSurfacePressed instead", ReplaceWith("NeoSurfacePressed"))
+val CharcoalSurfaceVariant = NeoSurfacePressed
+
+@Deprecated("Use NeoBorder instead", ReplaceWith("NeoBorder"))
+val CharcoalSurfaceHighlight = NeoBorder
+
+@Deprecated("Use NeoPrimary instead", ReplaceWith("NeoPrimary"))
+val SaffronPrimary = NeoPrimary
+
+@Deprecated("Use NeoOnPrimary instead", ReplaceWith("NeoOnPrimary"))
+val SaffronOnPrimary = NeoOnPrimary
+
+@Deprecated("Use NeoPrimaryContainer instead", ReplaceWith("NeoPrimaryContainer"))
+val SaffronContainer = NeoPrimaryContainer
+
+@Deprecated("Use NeoOnPrimaryContainer instead", ReplaceWith("NeoOnPrimaryContainer"))
+val SaffronOnContainer = NeoOnPrimaryContainer
+
+@Deprecated("Use NeoTextPrimary or Color.White as appropriate", ReplaceWith("NeoTextPrimary"))
+val PureWhite = NeoTextPrimary
+
+@Deprecated("Use NeoTextMuted instead", ReplaceWith("NeoTextMuted"))
+val MutedText = NeoTextMuted
+
+@Deprecated("Use NeoTextSecondary instead", ReplaceWith("NeoTextSecondary"))
+val SubtitleText = NeoTextSecondary

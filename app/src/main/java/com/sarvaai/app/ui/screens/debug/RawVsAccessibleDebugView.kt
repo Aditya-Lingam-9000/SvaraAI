@@ -1,5 +1,7 @@
 package com.sarvaai.app.ui.screens.debug
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +31,6 @@ import com.sarvaai.app.adapt.verbalizer.NumberVerbalizer
 import com.sarvaai.app.llm.models.StructuredAiResponse
 import com.sarvaai.app.llm.models.UiAction
 import com.sarvaai.app.ui.components.AccessibleButton
-import com.sarvaai.app.ui.components.AccessibleCard
 import com.sarvaai.app.ui.theme.*
 
 @Composable
@@ -42,6 +44,12 @@ fun RawVsAccessibleDebugView(
     var selectedLanguage by remember { mutableStateOf("te") }
     val scrollState = rememberScrollState()
 
+    // Safe Back handling
+    BackHandler {
+        onStopAudio()
+        onClose()
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             onStopAudio()
@@ -51,8 +59,8 @@ fun RawVsAccessibleDebugView(
     // Sample complex dish comparison query
     val sampleRawMarkdown = """
     **Kadai Paneer vs Paneer Butter Masala:**
-    * Kadai Paneer: Spicy gravy with bell peppers (₹280) [🌶️🌶️ Medium-High]
-    * Paneer Butter Masala: Mild buttery cashew gravy (₹320) [🧈 Mild]
+    * Kadai Paneer: Spicy gravy with bell peppers (₹280) [Medium-High]
+    * Paneer Butter Masala: Mild buttery cashew gravy (₹320) [Mild]
     * Order recommendation: Kadai Paneer + 2 Garlic Naans (₹90 each) = Total ₹460.
     """.trimIndent()
 
@@ -109,7 +117,7 @@ fun RawVsAccessibleDebugView(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = CharcoalBackground
+        color = NeoBackground
     ) {
         Column(
             modifier = Modifier
@@ -124,51 +132,82 @@ fun RawVsAccessibleDebugView(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Raw vs Accessible Comparison",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SaffronPrimary,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() }
-                )
-
-                if (isAudioPlaying) {
-                    IconButton(
-                        onClick = onStopAudio,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(36.dp)
-                            .background(NonVegRed.copy(alpha = 0.2f), CircleShape)
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeoPrimaryContainer)
+                            .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = "Stop playing audio",
-                            tint = NonVegRed
+                            imageVector = Icons.Default.CompareArrows,
+                            contentDescription = null,
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Raw vs Accessible",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary,
+                            modifier = Modifier.semantics { heading() }
+                        )
+                        Text(
+                            text = "Side-by-Side Multi-Disability Access Evaluation",
+                            fontSize = 12.sp,
+                            color = NeoTextSecondary
                         )
                     }
                 }
 
-                IconButton(
-                    onClick = {
-                        onStopAudio()
-                        onClose()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isAudioPlaying) {
+                        IconButton(
+                            onClick = onStopAudio,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(NonVegRedContainer)
+                                .border(1.dp, NonVegRed, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop playing audio",
+                                tint = NonVegRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close comparison view",
-                        tint = PureWhite
-                    )
+
+                    IconButton(
+                        onClick = {
+                            onStopAudio()
+                            onClose()
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(NeoSurface)
+                            .border(1.dp, NeoBorder, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close comparison view",
+                            tint = NeoTextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
-
-            Text(
-                text = "Live Side-by-Side Jury Evaluation for Multi-Disability Access",
-                fontSize = 13.sp,
-                color = SubtitleText
-            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -181,9 +220,13 @@ fun RawVsAccessibleDebugView(
                         modifier = Modifier
                             .weight(1f)
                             .height(42.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) SaffronPrimary else CharcoalSurfaceVariant)
-                            .border(1.5.dp, if (isSelected) SaffronPrimary else Color(0xFF444444), RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) NeoPrimary else NeoSurface)
+                            .border(
+                                1.5.dp,
+                                if (isSelected) NeoPrimary else NeoBorder,
+                                RoundedCornerShape(10.dp)
+                            )
                             .clickable {
                                 if (selectedLanguage != code) {
                                     onStopAudio()
@@ -194,124 +237,193 @@ fun RawVsAccessibleDebugView(
                         Text(
                             text = label,
                             fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) SaffronOnPrimary else PureWhite
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) NeoOnPrimary else NeoTextPrimary
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Card 1: Raw LLM Output (Unadapted)
-            AccessibleCard(borderColor = NonVegRed) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = NonVegRed, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.5.dp, NonVegRed),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(NonVegRedContainer)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = NonVegRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Standard Raw LLM Output (Inaccessible)",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NonVegRed
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Text(
-                        text = "Standard Raw LLM Output (Inaccessible)",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NonVegRed
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "• Raw markdown symbols (**, *, 🌶️, 🧈) cause robotic stutter in TTS\n• Unverbalized currency symbols (₹280) break screen readers\n• Unbounded dense paragraphs confuse elderly/cognitive users",
-                    fontSize = 12.sp,
-                    color = SubtitleText,
-                    lineHeight = 16.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF1E1E1E))
-                        .border(1.dp, Color(0xFF333333), RoundedCornerShape(8.dp))
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = sampleRawMarkdown,
-                        fontFamily = FontFamily.Monospace,
+                        text = "• Raw markdown symbols cause robotic stutter in TTS\n• Unverbalized currency symbols (₹280) break screen readers\n• Unbounded dense paragraphs confuse elderly and cognitive users",
                         fontSize = 12.sp,
-                        color = Color(0xFFCCCCCC)
+                        color = NeoTextSecondary,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeoSurfacePressed)
+                            .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = sampleRawMarkdown,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            color = NeoTextPrimary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    AccessibleButton(
+                        text = "Hear Unadapted Raw Audio",
+                        onClick = { onPlayAudio(sampleRawMarkdown, selectedLanguage) },
+                        isPrimary = false,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = null,
+                                tint = NeoTextPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                AccessibleButton(
-                    text = "Hear Unadapted Raw Audio",
-                    onClick = { onPlayAudio(sampleRawMarkdown, selectedLanguage) },
-                    isPrimary = false
-                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Card 2: SarvaAI Adapted Accessible Output
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(2.dp, VegGreen),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(VegGreenContainer)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = VegGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "SarvaAI Accessible Output Adapter",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = VegGreen
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "• Currency verbalized to exact spoken words (${NumberVerbalizer.verbalizePrice(460, selectedLanguage)})\n• Markdown and symbols stripped for acoustic clarity\n• Sentence-chunked streaming with live caption highlighting\n• TalkBack semantic merger and high contrast buttons (WCAG AAA)",
+                        fontSize = 12.sp,
+                        color = NeoTextSecondary,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Accessible Structured Preview
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(NeoPrimaryContainer.copy(alpha = 0.4f))
+                            .border(1.dp, NeoPrimary.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                            .padding(14.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = adaptedOutput.formattedHeadline,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoPrimary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = adaptedOutput.spokenText,
+                                fontSize = 14.sp,
+                                color = NeoTextPrimary,
+                                lineHeight = 20.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            adaptedOutput.formattedBullets.forEach { bullet ->
+                                Text(
+                                    text = "• $bullet",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = NeoTextSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    AccessibleButton(
+                        text = "Hear SarvaAI Accessible Audio",
+                        onClick = { onPlayAudio(adaptedOutput.spokenText, selectedLanguage) },
+                        isPrimary = true,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = null,
+                                tint = NeoOnPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
-
-            // Card 2: SarvaAI Adapted Accessible Output
-            AccessibleCard(borderColor = VegGreen) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = VegGreen, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "SarvaAI Accessible Output Adapter",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = VegGreen
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "• Currency verbalized to exact spoken words (${NumberVerbalizer.verbalizePrice(460, selectedLanguage)})\n• Markdown & emojis stripped for acoustic clarity\n• Sentence-chunked streaming with live yellow caption highlighting\n• TalkBack semantic merger and high contrast buttons (WCAG AAA)",
-                    fontSize = 12.sp,
-                    color = SubtitleText,
-                    lineHeight = 16.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Accessible Structured Preview
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(CharcoalSurfaceVariant)
-                        .border(1.dp, SaffronPrimary, RoundedCornerShape(8.dp))
-                        .padding(12.dp)
-                ) {
-                    Column {
-                        Text(
-                            text = adaptedOutput.formattedHeadline,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SaffronPrimary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = adaptedOutput.spokenText,
-                            fontSize = 14.sp,
-                            color = PureWhite,
-                            lineHeight = 20.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        adaptedOutput.formattedBullets.forEach { bullet ->
-                            Text(
-                                text = "• $bullet",
-                                fontSize = 13.sp,
-                                color = HighContrastYellow
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                AccessibleButton(
-                    text = "Hear SarvaAI Accessible Audio",
-                    onClick = { onPlayAudio(adaptedOutput.spokenText, selectedLanguage) },
-                    isPrimary = true
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

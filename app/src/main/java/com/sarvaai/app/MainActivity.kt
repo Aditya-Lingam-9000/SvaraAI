@@ -9,31 +9,40 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -195,6 +204,8 @@ class MainActivity : ComponentActivity() {
             var isHighContrast by remember { mutableStateOf(false) }
             var currentScreen by remember { mutableStateOf(AppScreen.PLAYGROUND) }
             var selectedLanguage by remember { mutableStateOf("hi") }
+            var isWakeWordServiceRunning by remember { mutableStateOf(true) }
+            var showApiKeyDialog by remember { mutableStateOf(false) }
 
             var menuSections by remember { mutableStateOf<List<MenuSectionEntity>>(emptyList()) }
             var menuItemsBySection by remember { mutableStateOf<Map<String, List<MenuItemEntity>>>(emptyMap()) }
@@ -251,189 +262,321 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Mobile Hardware / Gesture Back Button Handling
+            // If user is on any screen other than PLAYGROUND, navigating back goes to PLAYGROUND and stops audio
+            BackHandler(enabled = currentScreen != AppScreen.PLAYGROUND) {
+                stopSpeech()
+                currentScreen = AppScreen.PLAYGROUND
+            }
+
             SarvaTheme(isHighContrast = isHighContrast) {
-                when (currentScreen) {
-                    AppScreen.PLAYGROUND -> {
-                        MainAudioPlaygroundScreen(
-                            audioRecorder = audioRecorder,
-                            asrNmtClient = asrNmtClient,
-                            ttsClient = ttsClient,
-                            speechPlayer = speechPlayer,
-                            groqClient = groqClient,
-                            hapticEngine = hapticEngine,
-                            earconEngine = earconEngine,
-                            speechSuppressor = speechSuppressor,
-                            isHighContrast = isHighContrast,
+                Scaffold(
+                    topBar = {
+                        NeomorphicTopAppBar(
                             selectedLanguage = selectedLanguage,
-                            autoStartListeningTrigger = autoStartListeningTrigger,
-                            onLanguageSelected = { selectedLanguage = it },
-                            onOpenScreen = {
+                            onLanguageSelected = { newLang ->
                                 stopSpeech()
-                                currentScreen = it
+                                selectedLanguage = newLang
+                                hapticEngine.trigger(HapticPattern.CLICK)
                             },
-                            onToggleHighContrast = { isHighContrast = !isHighContrast },
-                            onCloseApp = {
-                                finishAndRemoveTask()
-                                finishAffinity()
-                            }
-                        )
-                    }
-
-                    AppScreen.CAMERA_CAPTURE -> {
-                        CameraXMenuCaptureScreen(
-                            menuExtractor = menuExtractor,
-                            hapticEngine = hapticEngine,
-                            earconEngine = earconEngine,
-                            selectedLanguage = selectedLanguage,
-                            onSpeakAnnouncement = { playSpeech(it, selectedLanguage) },
-                            onStopAnnouncement = { stopSpeech() },
-                            onMenuExtracted = { parsed ->
-                                stopSpeech()
-                                restaurantName = parsed.menu.restaurantName
-                                menuSections = parsed.sections
-                                menuItemsBySection = parsed.items.groupBy { it.sectionId }
-                                currentScreen = AppScreen.MENU_BROWSER
-                            },
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
-                            }
-                        )
-                    }
-
-                    AppScreen.MENU_BROWSER -> {
-                        MenuBrowserScreen(
-                            restaurantName = restaurantName,
-                            sections = menuSections,
-                            itemsBySection = menuItemsBySection,
-                            selectedLanguage = selectedLanguage,
-                            hapticEngine = hapticEngine,
-                            earconEngine = earconEngine,
-                            isAudioPlaying = isAudioPlaying,
-                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
-                            onStopNarration = { stopSpeech() },
-                            onAddItemToCart = { item ->
-                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                                lifecycleScope.launch {
-                                    val existing = database.cartDao().getCartItemsDirect().firstOrNull { it.name.equals(item.nameEnglish, ignoreCase = true) }
-                                    if (existing != null) {
-                                        database.cartDao().updateQuantity(existing.cartItemId, existing.quantity + 1)
-                                    } else {
-                                        val newItem = CartItemEntity(
-                                            cartItemId = "cart_${UUID.randomUUID().toString().take(8)}",
-                                            itemId = item.itemId,
-                                            name = item.nameEnglish,
-                                            unitPricePaise = item.pricePaise,
-                                            quantity = 1,
-                                            specialNotes = null
-                                        )
-                                        database.cartDao().insertOrUpdate(newItem)
-                                    }
+                            isWakeWordActive = isWakeWordServiceRunning,
+                            onToggleWakeWord = {
+                                isWakeWordServiceRunning = !isWakeWordServiceRunning
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                                if (isWakeWordServiceRunning) {
+                                    SvaraWakeWordService.startService(this@MainActivity)
+                                } else {
+                                    SvaraWakeWordService.stopService(this@MainActivity)
                                 }
                             },
-                            onOpenCart = {
-                                stopSpeech()
-                                currentScreen = AppScreen.VOICE_CART
+                            isHighContrast = isHighContrast,
+                            onToggleHighContrast = {
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                                isHighContrast = !isHighContrast
                             },
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
+                            onOpenApiKeyDialog = {
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                                showApiKeyDialog = true
                             }
                         )
+                    },
+                    bottomBar = {
+                        NeomorphicBottomNavBar(
+                            currentScreen = currentScreen,
+                            onScreenSelected = { targetScreen ->
+                                if (currentScreen != targetScreen) {
+                                    stopSpeech()
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    currentScreen = targetScreen
+                                }
+                            }
+                        )
+                    },
+                    containerColor = MaterialTheme.colorScheme.background
+                ) { paddingValues ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                    ) {
+                        when (currentScreen) {
+                            AppScreen.PLAYGROUND -> {
+                                MainAudioPlaygroundScreen(
+                                    audioRecorder = audioRecorder,
+                                    asrNmtClient = asrNmtClient,
+                                    ttsClient = ttsClient,
+                                    speechPlayer = speechPlayer,
+                                    groqClient = groqClient,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    speechSuppressor = speechSuppressor,
+                                    isHighContrast = isHighContrast,
+                                    selectedLanguage = selectedLanguage,
+                                    autoStartListeningTrigger = autoStartListeningTrigger,
+                                    isWakeWordServiceRunning = isWakeWordServiceRunning,
+                                    onLanguageSelected = { selectedLanguage = it },
+                                    onOpenScreen = { target ->
+                                        stopSpeech()
+                                        currentScreen = target
+                                    },
+                                    onToggleHighContrast = { isHighContrast = !isHighContrast },
+                                    onToggleWakeWord = {
+                                        isWakeWordServiceRunning = !isWakeWordServiceRunning
+                                        if (isWakeWordServiceRunning) {
+                                            SvaraWakeWordService.startService(this@MainActivity)
+                                        } else {
+                                            SvaraWakeWordService.stopService(this@MainActivity)
+                                        }
+                                    },
+                                    onOpenApiKeyDialog = { showApiKeyDialog = true },
+                                    onCloseApp = {
+                                        finishAndRemoveTask()
+                                        finishAffinity()
+                                    }
+                                )
+                            }
+
+                            AppScreen.CAMERA_CAPTURE -> {
+                                CameraXMenuCaptureScreen(
+                                    menuExtractor = menuExtractor,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    selectedLanguage = selectedLanguage,
+                                    onSpeakAnnouncement = { playSpeech(it, selectedLanguage) },
+                                    onStopAnnouncement = { stopSpeech() },
+                                    onMenuExtracted = { parsed ->
+                                        stopSpeech()
+                                        restaurantName = parsed.menu.restaurantName
+                                        menuSections = parsed.sections
+                                        menuItemsBySection = parsed.items.groupBy { it.sectionId }
+                                        currentScreen = AppScreen.MENU_BROWSER
+                                    },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.MENU_BROWSER -> {
+                                MenuBrowserScreen(
+                                    restaurantName = restaurantName,
+                                    sections = menuSections,
+                                    itemsBySection = menuItemsBySection,
+                                    selectedLanguage = selectedLanguage,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    isAudioPlaying = isAudioPlaying,
+                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    onStopNarration = { stopSpeech() },
+                                    onAddItemToCart = { item ->
+                                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                        lifecycleScope.launch {
+                                            val existing = database.cartDao().getCartItemsDirect().firstOrNull { it.name.equals(item.nameEnglish, ignoreCase = true) }
+                                            if (existing != null) {
+                                                database.cartDao().updateQuantity(existing.cartItemId, existing.quantity + 1)
+                                            } else {
+                                                val newItem = CartItemEntity(
+                                                    cartItemId = "cart_${UUID.randomUUID().toString().take(8)}",
+                                                    itemId = item.itemId,
+                                                    name = item.nameEnglish,
+                                                    unitPricePaise = item.pricePaise,
+                                                    quantity = 1,
+                                                    specialNotes = null
+                                                )
+                                                database.cartDao().insertOrUpdate(newItem)
+                                            }
+                                        }
+                                    },
+                                    onOpenCart = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.VOICE_CART
+                                    },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.VOICE_CART -> {
+                                VoiceOrderingCartScreen(
+                                    cartDao = database.cartDao(),
+                                    orderDao = database.orderDao(),
+                                    menuDao = database.menuDao(),
+                                    groqClient = groqClient,
+                                    audioRecorder = audioRecorder,
+                                    asrNmtClient = asrNmtClient,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    selectedLanguage = selectedLanguage,
+                                    restaurantName = restaurantName,
+                                    isAudioPlaying = isAudioPlaying,
+                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    onStopNarration = { stopSpeech() },
+                                    onOpenBillSplit = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.SMART_BILL
+                                    },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.WAITER_BRIDGE -> {
+                                WaiterBridgeScreen(
+                                    asrNmtClient = asrNmtClient,
+                                    groqClient = groqClient,
+                                    audioRecorder = audioRecorder,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    initialDinerLanguage = selectedLanguage,
+                                    initialStaffLanguage = if (selectedLanguage == "hi") "te" else "hi",
+                                    isAudioPlaying = isAudioPlaying,
+                                    onSpeakAudio = { textToSpeak, langToSpeak ->
+                                        playSpeech(textToSpeak, langToSpeak)
+                                    },
+                                    onStopAudio = { stopSpeech() },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.SMART_BILL -> {
+                                SmartBillSplitScreen(
+                                    cartDao = database.cartDao(),
+                                    orderDao = database.orderDao(),
+                                    menuDao = database.menuDao(),
+                                    groqClient = groqClient,
+                                    audioRecorder = audioRecorder,
+                                    asrNmtClient = asrNmtClient,
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    selectedLanguage = selectedLanguage,
+                                    restaurantName = restaurantName,
+                                    isAudioPlaying = isAudioPlaying,
+                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    onStopNarration = { stopSpeech() },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.RAW_VS_ACCESSIBLE -> {
+                                RawVsAccessibleDebugView(
+                                    isAudioPlaying = isAudioPlaying,
+                                    onPlayAudio = { textToPlay, langToPlay ->
+                                        playSpeech(textToPlay, langToPlay)
+                                    },
+                                    onStopAudio = { stopSpeech() },
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.DEBUG_SIGNAL_PANEL -> {
+                                DebugSignalPanel(
+                                    signalCollector = signalCollector,
+                                    inferenceEngine = profileInferenceEngine,
+                                    hapticEngine = hapticEngine,
+                                    onClose = {
+                                        stopSpeech()
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+                        }
                     }
 
-                    AppScreen.VOICE_CART -> {
-                        VoiceOrderingCartScreen(
-                            cartDao = database.cartDao(),
-                            orderDao = database.orderDao(),
-                            menuDao = database.menuDao(),
-                            groqClient = groqClient,
-                            audioRecorder = audioRecorder,
-                            asrNmtClient = asrNmtClient,
-                            hapticEngine = hapticEngine,
-                            earconEngine = earconEngine,
-                            selectedLanguage = selectedLanguage,
-                            restaurantName = restaurantName,
-                            isAudioPlaying = isAudioPlaying,
-                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
-                            onStopNarration = { stopSpeech() },
-                            onOpenBillSplit = {
-                                stopSpeech()
-                                currentScreen = AppScreen.SMART_BILL
+                    // Groq API Key Configuration Dialog
+                    if (showApiKeyDialog) {
+                        var groqKeyInput by remember { mutableStateOf(ApiKeyManager.getGroqApiKey(this@MainActivity)) }
+                        AlertDialog(
+                            onDismissRequest = { showApiKeyDialog = false },
+                            title = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Key,
+                                        contentDescription = null,
+                                        tint = NeoPrimary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Text(
+                                        text = "Groq Cloud API Key",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NeoTextPrimary
+                                    )
+                                }
                             },
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
-                            }
-                        )
-                    }
-
-                    AppScreen.WAITER_BRIDGE -> {
-                        WaiterBridgeScreen(
-                            asrNmtClient = asrNmtClient,
-                            groqClient = groqClient,
-                            audioRecorder = audioRecorder,
-                            hapticEngine = hapticEngine,
-                            earconEngine = earconEngine,
-                            initialDinerLanguage = selectedLanguage,
-                            initialStaffLanguage = if (selectedLanguage == "hi") "te" else "hi",
-                            isAudioPlaying = isAudioPlaying,
-                            onSpeakAudio = { textToSpeak, langToSpeak ->
-                                playSpeech(textToSpeak, langToSpeak)
+                            text = {
+                                Column {
+                                    Text(
+                                        text = "Enter your Groq API Key (from console.groq.com) for LLaMA 3.2 Vision and LLaMA 3.3 70B cloud reasoning. When empty, on-device neural processing will be used.",
+                                        fontSize = 13.sp,
+                                        color = NeoTextSecondary,
+                                        lineHeight = 18.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    OutlinedTextField(
+                                        value = groqKeyInput,
+                                        onValueChange = { groqKeyInput = it },
+                                        label = { Text("gsk_...") },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             },
-                            onStopAudio = { stopSpeech() },
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
-                            }
-                        )
-                    }
-
-                    AppScreen.SMART_BILL -> {
-                        SmartBillSplitScreen(
-                            cartDao = database.cartDao(),
-                            orderDao = database.orderDao(),
-                            menuDao = database.menuDao(),
-                            groqClient = groqClient,
-                            audioRecorder = audioRecorder,
-                            asrNmtClient = asrNmtClient,
-                            hapticEngine = hapticEngine,
-                            earconEngine = earconEngine,
-                            selectedLanguage = selectedLanguage,
-                            restaurantName = restaurantName,
-                            isAudioPlaying = isAudioPlaying,
-                            onSpeakNarration = { playSpeech(it, selectedLanguage) },
-                            onStopNarration = { stopSpeech() },
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
-                            }
-                        )
-                    }
-
-                    AppScreen.RAW_VS_ACCESSIBLE -> {
-                        RawVsAccessibleDebugView(
-                            isAudioPlaying = isAudioPlaying,
-                            onPlayAudio = { textToPlay, langToPlay ->
-                                playSpeech(textToPlay, langToPlay)
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        ApiKeyManager.setGroqApiKey(this@MainActivity, groqKeyInput)
+                                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                        showApiKeyDialog = false
+                                    }
+                                ) {
+                                    Text("Save Key", fontWeight = FontWeight.Bold, color = NeoPrimary)
+                                }
                             },
-                            onStopAudio = { stopSpeech() },
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
-                            }
-                        )
-                    }
-
-                    AppScreen.DEBUG_SIGNAL_PANEL -> {
-                        DebugSignalPanel(
-                            signalCollector = signalCollector,
-                            inferenceEngine = profileInferenceEngine,
-                            hapticEngine = hapticEngine,
-                            onClose = {
-                                stopSpeech()
-                                currentScreen = AppScreen.PLAYGROUND
-                            }
+                            dismissButton = {
+                                TextButton(onClick = { showApiKeyDialog = false }) {
+                                    Text("Cancel", color = NeoTextSecondary)
+                                }
+                            },
+                            containerColor = NeoSurface,
+                            shape = RoundedCornerShape(20.dp)
                         )
                     }
                 }
@@ -483,6 +626,328 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Fixed persistent Neomorphic Top App Bar with Logo, Global Language Switcher, and Quick Action buttons.
+ * Strictly zero emojis, clean Material Icons and Neomorphic styling.
+ */
+@Composable
+fun NeomorphicTopAppBar(
+    selectedLanguage: String,
+    onLanguageSelected: (String) -> Unit,
+    isWakeWordActive: Boolean,
+    onToggleWakeWord: () -> Unit,
+    isHighContrast: Boolean,
+    onToggleHighContrast: () -> Unit,
+    onOpenApiKeyDialog: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.background,
+        shadowElevation = 4.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            // Row 1: Brand Logo + Quick Action Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // SvaraAI Brand Title
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = NeoSurface,
+                                borderColor = NeoBorder,
+                                elevation = 3.dp,
+                                cornerRadius = 19.dp
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = null,
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "SvaraAI",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = NeoTextPrimary,
+                            lineHeight = 20.sp
+                        )
+                        Text(
+                            text = "Multimodal Restaurant Assistant",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = NeoTextSecondary,
+                            lineHeight = 13.sp
+                        )
+                    }
+                }
+
+                // Quick Action Buttons Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Wake Word Status Badge / Button
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = if (isWakeWordActive) VegGreenContainer else NeoSurface,
+                                borderColor = if (isWakeWordActive) VegGreen else NeoBorder,
+                                elevation = 3.dp,
+                                cornerRadius = 19.dp
+                            )
+                            .clickable(onClick = onToggleWakeWord)
+                            .semantics {
+                                contentDescription = if (isWakeWordActive) "Wake word active: Hey Svara. Tap to disable" else "Wake word inactive. Tap to enable"
+                                role = Role.Button
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Hearing,
+                            contentDescription = null,
+                            tint = if (isWakeWordActive) VegGreenOnContainer else NeoTextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // High Contrast Toggle
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = if (isHighContrast) NeoPrimaryContainer else NeoSurface,
+                                borderColor = if (isHighContrast) NeoPrimary else NeoBorder,
+                                elevation = 3.dp,
+                                cornerRadius = 19.dp
+                            )
+                            .clickable(onClick = onToggleHighContrast)
+                            .semantics {
+                                contentDescription = "Toggle high contrast mode"
+                                role = Role.Button
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Contrast,
+                            contentDescription = null,
+                            tint = if (isHighContrast) NeoPrimary else NeoTextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Settings / API Key Button
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = NeoSurface,
+                                borderColor = NeoBorder,
+                                elevation = 3.dp,
+                                cornerRadius = 19.dp
+                            )
+                            .clickable(onClick = onOpenApiKeyDialog)
+                            .semantics {
+                                contentDescription = "Configure cloud API keys and reasoning engine"
+                                role = Role.Button
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = null,
+                            tint = NeoTextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Row 2: Global Segmented Language Switcher (EN, हिन्दी, తెలుగు)
+            NeomorphicLanguageSelector(
+                selectedLanguage = selectedLanguage,
+                onLanguageSelected = onLanguageSelected
+            )
+        }
+    }
+}
+
+/**
+ * Data definition for Bottom Navigation Tabs
+ */
+data class BottomNavTabItem(
+    val screen: AppScreen,
+    val title: String,
+    val icon: ImageVector,
+    val contentDescription: String
+)
+
+/**
+ * Neomorphic Bottom Navigation Bar with 5 tabs:
+ * 1. Home / Assistant (Mic)
+ * 2. Menu & Scan (CameraAlt)
+ * 3. Cart (ShoppingCart)
+ * 4. Waiter Bridge (Translate)
+ * 5. Bill & Split (ReceiptLong)
+ */
+@Composable
+fun NeomorphicBottomNavBar(
+    currentScreen: AppScreen,
+    onScreenSelected: (AppScreen) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tabs = listOf(
+        BottomNavTabItem(
+            screen = AppScreen.PLAYGROUND,
+            title = "Assistant",
+            icon = Icons.Default.Mic,
+            contentDescription = "Voice Assistant and Playground"
+        ),
+        BottomNavTabItem(
+            screen = AppScreen.CAMERA_CAPTURE,
+            title = "Scan Menu",
+            icon = Icons.Default.CameraAlt,
+            contentDescription = "Camera and Menu OCR Scanner"
+        ),
+        BottomNavTabItem(
+            screen = AppScreen.VOICE_CART,
+            title = "Cart",
+            icon = Icons.Default.ShoppingCart,
+            contentDescription = "Voice Ordering Cart"
+        ),
+        BottomNavTabItem(
+            screen = AppScreen.WAITER_BRIDGE,
+            title = "Bridge",
+            icon = Icons.Default.Translate,
+            contentDescription = "Multilingual Waiter Bridge"
+        ),
+        BottomNavTabItem(
+            screen = AppScreen.SMART_BILL,
+            title = "Bill",
+            icon = Icons.AutoMirrored.Filled.ReceiptLong,
+            contentDescription = "Smart Bill and Split"
+        )
+    )
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.background,
+        shadowElevation = 8.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .neomorphicSurface(
+                    shape = RoundedCornerShape(20.dp),
+                    surfaceColor = NeoSurface,
+                    borderColor = NeoBorder,
+                    elevation = 4.dp,
+                    cornerRadius = 20.dp
+                )
+                .padding(horizontal = 4.dp, vertical = 4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                tabs.forEach { tab ->
+                    val isSelected = when (tab.screen) {
+                        AppScreen.PLAYGROUND -> currentScreen == AppScreen.PLAYGROUND || currentScreen == AppScreen.RAW_VS_ACCESSIBLE || currentScreen == AppScreen.DEBUG_SIGNAL_PANEL
+                        AppScreen.CAMERA_CAPTURE -> currentScreen == AppScreen.CAMERA_CAPTURE || currentScreen == AppScreen.MENU_BROWSER
+                        AppScreen.VOICE_CART -> currentScreen == AppScreen.VOICE_CART
+                        AppScreen.WAITER_BRIDGE -> currentScreen == AppScreen.WAITER_BRIDGE
+                        AppScreen.SMART_BILL -> currentScreen == AppScreen.SMART_BILL
+                        else -> false
+                    }
+
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val isPressed by interactionSource.collectIsPressedAsState()
+                    val scale by animateFloatAsState(
+                        targetValue = if (isPressed) 0.92f else 1.0f,
+                        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                        label = "bottom_tab_scale"
+                    )
+
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .scale(scale)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (isSelected) NeoPrimaryContainer else Color.Transparent)
+                            .clickable(
+                                interactionSource = interactionSource,
+                                indication = null,
+                                onClick = { onScreenSelected(tab.screen) }
+                            )
+                            .semantics {
+                                contentDescription = tab.contentDescription
+                                role = Role.Tab
+                            }
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = null,
+                                tint = if (isSelected) NeoPrimary else NeoTextSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = tab.title,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) NeoPrimary else NeoTextSecondary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Redesigned Main Audio Playground Screen:
+ * - Pure Neomorphic White Theme.
+ * - Centerpiece Animated NeomorphicMicButton with pulsing soundwaves and live amplitude.
+ * - Section cards for Assistant Status, Live Captions, Diagnostics, Playback Speed (0.8x-1.5x), and Quick Audio Prompts.
+ * - Strictly zero emojis across all labels, cards, buttons, dialogs.
+ * - Smooth AnimatedVisibility transitions.
+ */
 @Composable
 fun MainAudioPlaygroundScreen(
     audioRecorder: AudioRecorder,
@@ -496,9 +961,12 @@ fun MainAudioPlaygroundScreen(
     isHighContrast: Boolean,
     selectedLanguage: String,
     autoStartListeningTrigger: Int = 0,
+    isWakeWordServiceRunning: Boolean = true,
     onLanguageSelected: (String) -> Unit,
     onOpenScreen: (AppScreen) -> Unit,
     onToggleHighContrast: () -> Unit,
+    onToggleWakeWord: () -> Unit = {},
+    onOpenApiKeyDialog: () -> Unit = {},
     onCloseApp: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
@@ -515,7 +983,6 @@ fun MainAudioPlaygroundScreen(
     val playbackSpeed by speechPlayer.playbackSpeed.collectAsState()
 
     var isProcessing by remember { mutableStateOf(false) }
-    var isWakeWordServiceRunning by remember { mutableStateOf(true) }
     var ingestionResult by remember { mutableStateOf<IngestionResult?>(null) }
     var structuredAiResponse by remember { mutableStateOf<StructuredAiResponse?>(null) }
     var currentSpokenCaption by remember { mutableStateOf("") }
@@ -567,7 +1034,7 @@ fun MainAudioPlaygroundScreen(
         activePlaygroundPlaybackJob = scope.launch {
             isProcessing = true
             errorMessage = null
-            currentSpokenCaption = "Synthesizing audio..."
+            currentSpokenCaption = "Synthesizing audio response..."
 
             // Sentence Chunking for Low-Latency TTFA
             val chunks = SentenceChunker.splitIntoChunks(cleanText)
@@ -661,7 +1128,7 @@ fun MainAudioPlaygroundScreen(
                                             is Result.Success -> {
                                                 val aiResp = intentResult.data
                                                 structuredAiResponse = aiResp
-                                                // Step 3: Directly synthesize the AI's natural spoken response in customer's language
+                                                // Step 3: Directly synthesize the AI's natural spoken response
                                                 playSampleText(aiResp.spoken, selectedLanguage)
                                             }
                                             is Result.Error -> {
@@ -714,7 +1181,7 @@ fun MainAudioPlaygroundScreen(
         if (autoStartListeningTrigger > 0) {
             earconEngine.play(EarconType.LISTEN_START)
             hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
-            currentSpokenCaption = "🎙️ Listening for your voice..."
+            currentSpokenCaption = "Listening for your voice..."
             if (!isRecording) {
                 startListeningFlow()
             }
@@ -728,420 +1195,525 @@ fun MainAudioPlaygroundScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
-                .systemBarsPadding()
+                .padding(horizontal = 16.dp)
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Header Title
-            Text(
-                text = "SarvaAI",
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { heading() }
-            )
-
-            Text(
-                text = "Accessible Multimodal Restaurant Assistant",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Multi-Phase Feature Launch Rows
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+            // =========================================================================
+            // CENTERPIECE: Animated Neomorphic Microphone Button with Live Waves
+            // =========================================================================
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
             ) {
-                AccessibleButton(
-                    text = "📸 Scan Menu (P5/6)",
+                NeomorphicMicButton(
+                    isRecording = isRecording,
+                    isProcessing = isProcessing,
+                    amplitude = amplitude,
                     onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.CAMERA_CAPTURE)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = true
-                )
-
-                AccessibleButton(
-                    text = "🛒 Voice Cart (P7)",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.VOICE_CART)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = true
+                        startListeningFlow()
+                    }
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // =========================================================================
+            // 1. ASSISTANT STATUS CARD
+            // =========================================================================
+            NeomorphicCard(
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                AccessibleButton(
-                    text = "🧑‍🍳 Waiter Bridge (P10)",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.WAITER_BRIDGE)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = true
-                )
-
-                AccessibleButton(
-                    text = "💳 Smart Bill (P11)",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.SMART_BILL)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = true
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                AccessibleButton(
-                    text = "🛠️ Adaptation Debug (P12)",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.DEBUG_SIGNAL_PANEL)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = false
-                )
-
-                AccessibleButton(
-                    text = "⚖️ Jury Mode (P4)",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = false
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Wake-Word Background Service Status & Control Card
-            AccessibleCard(
-                borderColor = if (isWakeWordServiceRunning) VegGreen else SaffronPrimary
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = when {
+                                isProcessing -> Icons.Default.Autorenew
+                                isAudioPlaying -> Icons.AutoMirrored.Filled.VolumeUp
+                                isRecording -> Icons.Default.GraphicEq
+                                else -> Icons.Default.SmartToy
+                            },
+                            contentDescription = null,
+                            tint = when {
+                                isProcessing -> NeoPrimary
+                                isAudioPlaying -> NeoPrimary
+                                isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> VegGreen
+                                isRecording -> NeoPrimary
+                                else -> NeoTextSecondary
+                            },
+                            modifier = Modifier.size(22.dp)
+                        )
+
                         Text(
-                            text = "🎙️ 'Hey Svara' Wake-Word Service",
+                            text = "Voice Assistant Status",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = PureWhite
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (isWakeWordServiceRunning) "Active in background (Foreground Service)" else "Service stopped",
-                            fontSize = 12.sp,
-                            color = if (isWakeWordServiceRunning) VegGreen else SubtitleText
+                            color = NeoTextPrimary
                         )
                     }
-                    Switch(
-                        checked = isWakeWordServiceRunning,
-                        onCheckedChange = { enable ->
-                            isWakeWordServiceRunning = enable
-                            hapticEngine.trigger(HapticPattern.CLICK)
-                            if (enable) {
-                                SvaraWakeWordService.startService(context)
-                            } else {
-                                SvaraWakeWordService.stopService(context)
-                            }
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = PureWhite,
-                            checkedTrackColor = VegGreen,
-                            uncheckedThumbColor = PureWhite,
-                            uncheckedTrackColor = CharcoalSurfaceVariant
+
+                    // Live Status Pill Badge
+                    val badgeColor = when {
+                        isProcessing -> NeoPrimaryContainer
+                        isAudioPlaying -> NeoPrimaryContainer
+                        isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> VegGreenContainer
+                        isRecording -> NeoPrimaryContainer
+                        else -> NeoSurfacePressed
+                    }
+                    val badgeTextColor = when {
+                        isProcessing -> NeoOnPrimaryContainer
+                        isAudioPlaying -> NeoOnPrimaryContainer
+                        isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> VegGreenOnContainer
+                        isRecording -> NeoOnPrimaryContainer
+                        else -> NeoTextSecondary
+                    }
+                    val badgeText = when {
+                        isProcessing -> "Processing"
+                        isAudioPlaying -> "Speaking"
+                        isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> "Speech Active"
+                        isRecording && vadStatus == VadStatus.CALIBRATING -> "Calibrating"
+                        isRecording -> "Listening"
+                        else -> "Standby"
+                    }
+
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(badgeColor)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeTextColor
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = when {
+                        isProcessing -> "Processing speech request with Bhashini ASR and Groq AI..."
+                        isAudioPlaying -> "Speaking aloud via ExoPlayer streaming playback..."
+                        isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> "Active speech detected. Ingesting voice stream..."
+                        isRecording && vadStatus == VadStatus.CALIBRATING -> "Calibrating ambient restaurant acoustic noise..."
+                        isRecording -> "Listening for voice (Voice Activity Detector active)..."
+                        else -> "Tap microphone or say 'Hey Svara' to begin dialogue"
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = when {
+                        isAudioPlaying -> NeoPrimary
+                        isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> VegGreen
+                        else -> NeoTextSecondary
+                    },
+                    lineHeight = 18.sp
+                )
+
+                // Live Audio Amplitude Level
+                AnimatedVisibility(
+                    visible = isRecording,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Microphone Signal Level",
+                                fontSize = 12.sp,
+                                color = NeoTextSecondary
+                            )
+                            Text(
+                                text = "${(amplitude * 100).toInt()}%",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = VegGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { amplitude.coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = VegGreen,
+                            trackColor = NeoSurfacePressed
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // =========================================================================
+            // 2. LIVE CAPTIONS CARD
+            // =========================================================================
+            AnimatedVisibility(
+                visible = currentSpokenCaption.isNotBlank(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                NeomorphicCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Subtitles,
+                                contentDescription = null,
+                                tint = NeoPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Live Captions",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextPrimary
+                            )
+                        }
+
+                        if (isAudioPlaying) {
+                            TextButton(
+                                onClick = { speechPlayer.stop() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Stop,
+                                    contentDescription = null,
+                                    tint = NonVegRed,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Stop",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NonVegRed
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LiveCaptionBar(
+                        fullCaption = currentSpokenCaption,
+                        highlightedWordIndex = highlightedWordIndex,
+                        isVisible = true
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Language Selector Chips
-            Text(
-                text = "Select Speaking & Playback Language",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = SubtitleText
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // =========================================================================
+            // 3. PITCH-PRESERVING SPEECH PLAYBACK SPEED
+            // =========================================================================
+            NeomorphicCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                CapabilityMatrix.SUPPORTED_LANGUAGES.forEach { lang ->
-                    val isSelected = selectedLanguage == lang.code
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(54.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isSelected) SaffronPrimary else CharcoalSurfaceVariant)
-                            .border(
-                                2.dp,
-                                if (isSelected) SaffronPrimary else Color(0xFF444444),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable {
-                                if (isRecording) audioRecorder.stopRecording()
-                                speechPlayer.stop()
-                                onLanguageSelected(lang.code)
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                            }
-                            .semantics {
-                                contentDescription = "${lang.nameEnglish} language (${lang.nameNative})"
-                            }
-                    ) {
-                        Text(
-                            text = "${lang.nameNative}\n(${lang.code.uppercase()})",
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) SaffronOnPrimary else PureWhite,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 16.sp
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Playback Speed Regulation (0.8x, 1.0x, 1.25x, 1.5x)
-            Text(
-                text = "Pitch-Preserving Speech Speed",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = SubtitleText
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                listOf(0.8f to "0.8x (Gentle)", 1.0f to "1.0x (Normal)", 1.25f to "1.25x (Fast)", 1.5f to "1.5x (Rapid)").forEach { (speed, label) ->
-                    val isCurrent = Math.abs(playbackSpeed - speed) < 0.05f
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isCurrent) SaffronPrimary.copy(alpha = 0.85f) else CharcoalSurfaceVariant)
-                            .border(1.5.dp, if (isCurrent) SaffronPrimary else Color(0xFF444444), RoundedCornerShape(8.dp))
-                            .clickable {
-                                speechPlayer.setSpeed(speed)
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                            }
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 11.sp,
-                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isCurrent) SaffronOnPrimary else PureWhite,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Microphone Button for Speech-to-Speech Flow
-            val micButtonColor by animateColorAsState(
-                targetValue = when {
-                    isProcessing -> Color(0xFFFF9900)
-                    isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> VegGreen
-                    isRecording -> SaffronPrimary
-                    else -> CharcoalSurfaceVariant
-                },
-                label = "mic_color"
-            )
-
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(110.dp)
-                    .clip(CircleShape)
-                    .background(micButtonColor.copy(alpha = 0.25f))
-                    .border(3.dp, micButtonColor, CircleShape)
-                    .clickable(enabled = !isProcessing) {
-                        startListeningFlow()
-                    }
-                    .semantics {
-                        contentDescription = if (isRecording) "Stop voice recording" else "Start speech interaction in ${selectedLanguage.uppercase()}"
-                    }
-            ) {
-                Icon(
-                    imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = PureWhite,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // VAD & Playback Status
-            Text(
-                text = when {
-                    isProcessing -> "Processing with Bhashini ASR + AI Reasoner..."
-                    isAudioPlaying -> "Speaking aloud via ExoPlayer (Streaming)..."
-                    isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> "Speech Active (Listening...)"
-                    isRecording && vadStatus == VadStatus.CALIBRATING -> "Calibrating ambient noise..."
-                    isRecording -> "Listening for voice (VAD active)..."
-                    else -> "Tap microphone or say 'Hey Svara' for voice dialogue"
-                },
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = when {
-                    isAudioPlaying -> HighContrastYellow
-                    isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> VegGreen
-                    else -> PureWhite
-                }
-            )
-
-            if (isRecording) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { amplitude },
-                    modifier = Modifier
-                        .fillMaxWidth(0.6f)
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = VegGreen,
-                    trackColor = Color(0xFF333333)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Live Word-Synchronized Caption Bar
-            LiveCaptionBar(
-                fullCaption = currentSpokenCaption,
-                highlightedWordIndex = highlightedWordIndex,
-                isVisible = currentSpokenCaption.isNotBlank()
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Quick TTS Demonstration Triggers (Language-Native)
-            Text(
-                text = "Quick Voice Assistant Audio Prompts",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = SubtitleText
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                AccessibleButton(
-                    text = "Order Menu Intro",
-                    onClick = {
-                        val prompt = when (selectedLanguage) {
-                            "te" -> "సర్వ ఏఐ కి స్వాగతం. ఈరోజు మా వద్ద వేడి వేడి మసాలా దోశ, ఇడ్లీ సాంబార్, మరియు ఫిల్టర్ కాఫీ ఉన్నాయి. మీరు ఏమి ఆర్డర్ చేయాలనుకుంటున్నారు?"
-                            "hi" -> "सर्व एआई में आपका स्वागत है। आज हमारे पास गरमा-गरम मसाला डोसा, इडली सांभर और फ़िल्टर कॉफ़ी है। आप क्या ऑर्डर करना चाहेंगे?"
-                            else -> "Welcome to SarvaAI. We have hot crispy masala dosa, idli sambar, and filter coffee today. What would you like to order?"
-                        }
-                        playSampleText(prompt, selectedLanguage)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = true
-                )
-
-                AccessibleButton(
-                    text = "Confirm Order",
-                    onClick = {
-                        val prompt = when (selectedLanguage) {
-                            "te" -> "మీ రెండు మసాలా దోశలు మరియు ఒక ఫిల్టర్ కాఫీ ఆర్డర్ చేయబడ్డాయి. మొత్తం బిల్లు నూట ఎనభై రూపాయలు."
-                            "hi" -> "आपके दो मसाला डोसे और एक फ़िल्टर कॉफ़ी का ऑर्डर हो गया है। कुल राशि एक सौ अस्सी रुपये है।"
-                            else -> "Your order for two masala dosas and one filter coffee has been placed successfully. Your total is one hundred and eighty rupees."
-                        }
-                        playSampleText(prompt, selectedLanguage)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = false
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Ingestion & AI Understanding Diagnostics Card
-            AnimatedVisibility(visible = ingestionResult != null || structuredAiResponse != null || errorMessage != null) {
-                AccessibleCard(
-                    borderColor = if (errorMessage != null) NonVegRed else SaffronPrimary
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = null,
+                        tint = NeoPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Pitch-Preserving Speech Speed",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
+                }
+
+                Text(
+                    text = "Preserves voice pitch and natural acoustic fidelity across all speed settings",
+                    fontSize = 12.sp,
+                    color = NeoTextSecondary,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(
+                        0.8f to "0.8x",
+                        1.0f to "1.0x",
+                        1.25f to "1.25x",
+                        1.5f to "1.5x"
+                    ).forEach { (speed, label) ->
+                        val isCurrent = Math.abs(playbackSpeed - speed) < 0.05f
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .neomorphicSurface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    surfaceColor = if (isCurrent) NeoPrimary else NeoSurface,
+                                    borderColor = if (isCurrent) NeoPrimary else NeoBorder,
+                                    elevation = if (isCurrent) 2.dp else 3.dp,
+                                    isPressed = isCurrent,
+                                    cornerRadius = 10.dp
+                                )
+                                .clickable {
+                                    speechPlayer.setSpeed(speed)
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                }
+                                .semantics {
+                                    contentDescription = "Playback speed $label"
+                                    role = Role.Button
+                                }
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 13.sp,
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isCurrent) NeoOnPrimary else NeoTextPrimary,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // =========================================================================
+            // 4. QUICK VOICE ASSISTANT AUDIO PROMPTS
+            // =========================================================================
+            NeomorphicCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.RecordVoiceOver,
+                        contentDescription = null,
+                        tint = NeoPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Quick Voice Assistant Prompts",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
+                }
+
+                Text(
+                    text = "Synthesize language-native scenarios in the selected active language",
+                    fontSize = 12.sp,
+                    color = NeoTextSecondary,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    NeomorphicButton(
+                        text = "Menu Intro",
+                        onClick = {
+                            val prompt = when (selectedLanguage) {
+                                "te" -> "స్వర ఏఐ కి స్వాగతం. ఈరోజు మా వద్ద వేడి వేడి మసాలా దోశ, ఇడ్లీ సాంబార్, మరియు ఫిల్టర్ కాఫీ ఉన్నాయి. మీరు ఏమి ఆర్డర్ చేయాలనుకుంటున్నారు?"
+                                "hi" -> "स्वरा एआई में आपका स्वागत है। आज हमारे पास गरमा-गरम मसाला डोसा, इडली सांभर और फ़िल्टर कॉफ़ी है। आप क्या ऑर्डर करना चाहेंगे?"
+                                else -> "Welcome to SvaraAI. Today we have hot crispy masala dosa, idli sambar, and filter coffee. What would you like to order?"
+                            }
+                            playSampleText(prompt, selectedLanguage)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.RestaurantMenu,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        isPrimary = true
+                    )
+
+                    NeomorphicButton(
+                        text = "Confirm Order",
+                        onClick = {
+                            val prompt = when (selectedLanguage) {
+                                "te" -> "మీ రెండు మసాలా దోశలు మరియు ఒక ఫిల్టర్ కాఫీ ఆర్డర్ చేయబడ్డాయి. మొత్తం బిల్లు నూట ఎనభై రూపాయలు."
+                                "hi" -> "आपके दो मसाला डोसे और एक फ़िल्टर कॉफ़ी का ऑर्डर हो गया है। कुल राशि एक सौ अस्सी रुपये है।"
+                                else -> "Your order for two masala dosas and one filter coffee has been placed successfully. Total amount is one hundred and eighty rupees."
+                            }
+                            playSampleText(prompt, selectedLanguage)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircleOutline,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        isPrimary = false
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    NeomorphicButton(
+                        text = "Waiter Request",
+                        onClick = {
+                            val prompt = when (selectedLanguage) {
+                                "te" -> "దయచేసి టేబుల్ నాలుగు వద్ద సహాయం కావాలి. వెయిటర్ వస్తున్నారు."
+                                "hi" -> "कृपया टेबल नंबर चार पर सहायता की आवश्यकता है। वेटर आ रहे हैं।"
+                                else -> "Assistance is requested at Table 4. A waiter will arrive shortly."
+                            }
+                            playSampleText(prompt, selectedLanguage)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.SupportAgent,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        isPrimary = false
+                    )
+
+                    NeomorphicButton(
+                        text = "Bill Split",
+                        onClick = {
+                            val prompt = when (selectedLanguage) {
+                                "te" -> "మొత్తం బిల్లు ఐదు వందల నలభై రూపాయలు. ముగ్గురు వ్యక్తులకు ఒక్కొక్కరికి నూట ఎనభై రూపాయలు."
+                                "hi" -> "कुल बिल पांच सौ चालीस रुपये है। तीन लोगों में प्रति व्यक्ति एक सौ अस्सी रुपये बनता है।"
+                                else -> "Total bill is five hundred and forty rupees. Split equally between three diners is one hundred and eighty rupees each."
+                            }
+                            playSampleText(prompt, selectedLanguage)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        isPrimary = false
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // =========================================================================
+            // 5. INGESTION & DIALOGUE DIAGNOSTICS CARD
+            // =========================================================================
+            AnimatedVisibility(
+                visible = ingestionResult != null || structuredAiResponse != null || errorMessage != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                NeomorphicCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    borderColor = if (errorMessage != null) NonVegRed else NeoBorder
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.Language,
+                            imageVector = Icons.Default.Analytics,
                             contentDescription = null,
-                            tint = SaffronPrimary,
+                            tint = NeoPrimary,
                             modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Dialogue & Ingestion Diagnostics",
-                            fontSize = 17.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = NeoTextPrimary,
                             modifier = Modifier.semantics { heading() }
                         )
                     }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     errorMessage?.let { err ->
-                        Text(
-                            text = "Error: $err",
-                            fontSize = 14.sp,
-                            color = NonVegRed,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(NonVegRedContainer)
+                                .padding(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                tint = NonVegRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Error: $err",
+                                fontSize = 13.sp,
+                                color = NonVegRedOnContainer,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
                     }
 
                     ingestionResult?.let { res ->
                         Text(
                             text = "Recognized Native Speech (${res.sourceLanguage.uppercase()}):",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = SubtitleText
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NeoTextSecondary
                         )
                         Text(
                             text = if (res.originalTranscript.isNotEmpty()) res.originalTranscript else "(No speech detected)",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PureWhite
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary
                         )
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
 
                     structuredAiResponse?.let { ai ->
@@ -1163,44 +1735,57 @@ fun MainAudioPlaygroundScreen(
 
                         Text(
                             text = ai.headline,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = SaffronPrimary
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NeoPrimary
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
                             text = "Spoken Response (${selectedLanguage.uppercase()}):",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = SubtitleText
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NeoTextSecondary
                         )
                         Text(
                             text = ai.spoken,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Normal,
-                            color = PureWhite
+                            color = NeoTextPrimary
                         )
 
                         if (ai.actions.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 ai.actions.forEach { action ->
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(SaffronPrimary.copy(alpha = 0.2f))
-                                            .border(1.dp, SaffronPrimary, RoundedCornerShape(8.dp))
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                            .background(NeoPrimaryContainer)
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
-                                        Text(
-                                            text = "⚡ ${action.label}",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = SaffronPrimary
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Bolt,
+                                                contentDescription = null,
+                                                tint = NeoPrimary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = action.label,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoOnPrimaryContainer
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1208,109 +1793,126 @@ fun MainAudioPlaygroundScreen(
                     }
 
                     ingestionResult?.let { res ->
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                                tint = NeoTextMuted,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "ASR Latency: ${res.latencyMs} ms",
+                                fontSize = 11.sp,
+                                color = NeoTextMuted
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // =========================================================================
+            // 6. ACTIVE AI ENGINE STATUS & QUICK NAVIGATION
+            // =========================================================================
+            val hasValidKey = ApiKeyManager.hasValidGroqKey(context)
+            NeomorphicCard(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (hasValidKey) Icons.Default.CloudQueue else Icons.Default.Memory,
+                            contentDescription = null,
+                            tint = if (hasValidKey) VegGreen else NeoPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column {
+                            Text(
+                                text = if (hasValidKey) "Groq Cloud AI Engine Active" else "On-Device Neural Engine Active",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = NeoTextPrimary
+                            )
+                            Text(
+                                text = if (hasValidKey) "LLaMA 3.2 Vision & LLaMA 3.3 70B" else "Local Indic OCR & Intent Matching",
+                                fontSize = 11.sp,
+                                color = NeoTextSecondary
+                            )
+                        }
+                    }
+
+                    TextButton(
+                        onClick = onOpenApiKeyDialog,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = null,
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "ASR Latency: ${res.latencyMs} ms",
+                            text = "Configure",
                             fontSize = 12.sp,
-                            color = MutedText
+                            fontWeight = FontWeight.Bold,
+                            color = NeoPrimary
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            var showApiKeyDialog by remember { mutableStateOf(false) }
-            var groqKeyInput by remember { mutableStateOf(ApiKeyManager.getGroqApiKey(context)) }
-            val hasValidKey = ApiKeyManager.hasValidGroqKey(context)
-
-            // Active AI Engine Status Badge
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (hasValidKey) VegGreen.copy(alpha = 0.15f) else SaffronPrimary.copy(alpha = 0.15f))
-                    .border(1.dp, if (hasValidKey) VegGreen else SaffronPrimary, RoundedCornerShape(8.dp))
-                    .padding(vertical = 8.dp, horizontal = 12.dp)
-            ) {
-                Text(
-                    text = if (hasValidKey) "⚡ Groq LLaMA 3.2 Vision & 70B Cloud Engine Active" else "📱 On-Device High-Speed Neural OCR Engine Active",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (hasValidKey) VegGreen else SaffronPrimary,
-                    textAlign = TextAlign.Center
-                )
-            }
-
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Accessibility Controls
-            AccessibleButton(
-                text = if (isHighContrast) "Standard Dark Mode" else "High Contrast Mode",
-                onClick = {
-                    hapticEngine.trigger(HapticPattern.CLICK)
-                    onToggleHighContrast()
-                },
-                isPrimary = false
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            AccessibleButton(
-                text = "🔑 Configure Groq Cloud API Key",
-                onClick = {
-                    hapticEngine.trigger(HapticPattern.CLICK)
-                    showApiKeyDialog = true
-                },
-                isPrimary = false
-            )
-
-            if (showApiKeyDialog) {
-                AlertDialog(
-                    onDismissRequest = { showApiKeyDialog = false },
-                    title = {
-                        Text(
-                            text = "Groq Cloud API Key",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SaffronPrimary
+            // Advanced Diagnostic & Jury Navigation Buttons
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                NeomorphicButton(
+                    text = "Jury Mode",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.RAW_VS_ACCESSIBLE)
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.CompareArrows,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
                         )
                     },
-                    text = {
-                        Column {
-                            Text(
-                                text = "Enter your Groq API Key (from console.groq.com) for LLaMA 3.2 Vision and LLaMA 3.3 70B reasoning. If left blank, the app will seamlessly run on-device local neural OCR.",
-                                fontSize = 13.sp,
-                                color = PureWhite
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = groqKeyInput,
-                                onValueChange = { groqKeyInput = it },
-                                label = { Text("gsk_...") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+                    modifier = Modifier.weight(1f),
+                    isPrimary = false
+                )
+
+                NeomorphicButton(
+                    text = "Adaptation Signals",
+                    onClick = {
+                        hapticEngine.trigger(HapticPattern.CLICK)
+                        onOpenScreen(AppScreen.DEBUG_SIGNAL_PANEL)
                     },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                ApiKeyManager.setGroqApiKey(context, groqKeyInput)
-                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                                showApiKeyDialog = false
-                            }
-                        ) {
-                            Text("Save Key", fontWeight = FontWeight.Bold, color = SaffronPrimary)
-                        }
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
                     },
-                    dismissButton = {
-                        TextButton(onClick = { showApiKeyDialog = false }) {
-                            Text("Cancel", color = SubtitleText)
-                        }
-                    },
-                    containerColor = CharcoalSurfaceVariant
+                    modifier = Modifier.weight(1f),
+                    isPrimary = false
                 )
             }
 
