@@ -55,5 +55,11 @@ Icon
 # Profiler memory dumps
 *.hprof
 
-# Screenshots
+# Screenshots & Assets
 *.png
+!app/src/main/res/**
+!logo.png
+
+# Local docs and problem statements (kept locally only)
+docs/
+ProblemStatement/
