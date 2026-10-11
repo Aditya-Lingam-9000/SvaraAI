@@ -72,6 +72,63 @@ object RestaurantLexicalNormalizer {
                     english = english.replace(Regex("\\.+$"), "") + " tea."
                 }
             }
+
+            "ta" -> {
+                // Tamil: தோசை (Dosa), இட்லி (Idli), வடை (Vada), காபி (Coffee)
+                if (native.contains("தோசை") || native.contains("தோச")) {
+                    if (!english.contains("dosa", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " dosa."
+                    }
+                }
+                if (native.contains("இட்லி")) {
+                    if (!english.contains("idli", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " idli."
+                    }
+                }
+                if (native.contains("வடை")) {
+                    if (!english.contains("vada", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " vada."
+                    }
+                }
+            }
+
+            "kn" -> {
+                // Kannada: ದೋಸೆ (Dosa), ಇಡ್ಲಿ (Idli), ವಡೆ (Vada), ಕಾಫಿ (Coffee)
+                if (native.contains("ದೋಸೆ") || native.contains("ದೋಸ")) {
+                    if (!english.contains("dosa", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " dosa."
+                    }
+                }
+                if (native.contains("ಇಡ್ಲಿ")) {
+                    if (!english.contains("idli", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " idli."
+                    }
+                }
+                if (native.contains("ವಡೆ")) {
+                    if (!english.contains("vada", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " vada."
+                    }
+                }
+            }
+
+            "ml" -> {
+                // Malayalam: ദോശ (Dosa), ഇഡ്ഡലി (Idli), വട (Vada), ചായ (Chai)
+                if (native.contains("ദോശ") || native.contains("ദോസ")) {
+                    if (!english.contains("dosa", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " dosa."
+                    }
+                }
+                if (native.contains("ഇഡ്ഡലി") || native.contains("ഇഡ്‌ലി")) {
+                    if (!english.contains("idli", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " idli."
+                    }
+                }
+                if (native.contains("വട")) {
+                    if (!english.contains("vada", ignoreCase = true)) {
+                        english = english.replace(Regex("\\.+$"), "") + " vada."
+                    }
+                }
+            }
         }
 
         // Clean double periods and weird punctuation

@@ -58,17 +58,27 @@ class BhashiniConfigManager(
             if (userId.isEmpty() || apiKey.isEmpty()) {
                 Log.w(TAG, "Bhashini ULCA credentials not set in BuildConfig. Using standard fallback service mappings.")
                 val fallbackMap = mapOf(
-                    "asr_hi" to "ai4bharat/conformer-multilingual-indo-aryan-asr",
                     "asr_te" to "ai4bharat/conformer-multilingual-dravidian-asr",
+                    "asr_hi" to "ai4bharat/conformer-multilingual-indo-aryan-asr",
+                    "asr_ta" to "ai4bharat/conformer-multilingual-dravidian-asr",
+                    "asr_kn" to "ai4bharat/conformer-multilingual-dravidian-asr",
+                    "asr_ml" to "ai4bharat/conformer-multilingual-dravidian-asr",
                     "asr_en" to "ai4bharat/whisper-medium-en",
-                    "translation_hi_en" to "ai4bharat/indictrans-v2-all-gpu",
                     "translation_te_en" to "ai4bharat/indictrans-v2-all-gpu",
-                    "translation_en_hi" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_hi_en" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_ta_en" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_kn_en" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_ml_en" to "ai4bharat/indictrans-v2-all-gpu",
                     "translation_en_te" to "ai4bharat/indictrans-v2-all-gpu",
-                    "translation_hi_te" to "ai4bharat/indictrans-v2-all-gpu",
-                    "translation_te_hi" to "ai4bharat/indictrans-v2-all-gpu",
-                    "tts_hi" to "ai4bharat/indic-tts-coqui-indo-aryan-gpu",
+                    "translation_en_hi" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_en_ta" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_en_kn" to "ai4bharat/indictrans-v2-all-gpu",
+                    "translation_en_ml" to "ai4bharat/indictrans-v2-all-gpu",
                     "tts_te" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+                    "tts_hi" to "ai4bharat/indic-tts-coqui-indo-aryan-gpu",
+                    "tts_ta" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+                    "tts_kn" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+                    "tts_ml" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
                     "tts_en" to "ai4bharat/indic-tts-coqui-indo-aryan-gpu"
                 )
 
@@ -86,15 +96,27 @@ class BhashiniConfigManager(
             val requestBodyJson = """
             {
               "pipelineTasks": [
-                { "taskType": "asr", "config": { "language": { "sourceLanguage": "hi" } } },
                 { "taskType": "asr", "config": { "language": { "sourceLanguage": "te" } } },
+                { "taskType": "asr", "config": { "language": { "sourceLanguage": "hi" } } },
+                { "taskType": "asr", "config": { "language": { "sourceLanguage": "ta" } } },
+                { "taskType": "asr", "config": { "language": { "sourceLanguage": "kn" } } },
+                { "taskType": "asr", "config": { "language": { "sourceLanguage": "ml" } } },
                 { "taskType": "asr", "config": { "language": { "sourceLanguage": "en" } } },
-                { "taskType": "translation", "config": { "language": { "sourceLanguage": "hi", "targetLanguage": "en" } } },
                 { "taskType": "translation", "config": { "language": { "sourceLanguage": "te", "targetLanguage": "en" } } },
-                { "taskType": "translation", "config": { "language": { "sourceLanguage": "en", "targetLanguage": "hi" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "hi", "targetLanguage": "en" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "ta", "targetLanguage": "en" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "kn", "targetLanguage": "en" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "ml", "targetLanguage": "en" } } },
                 { "taskType": "translation", "config": { "language": { "sourceLanguage": "en", "targetLanguage": "te" } } },
-                { "taskType": "tts", "config": { "language": { "sourceLanguage": "hi" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "en", "targetLanguage": "hi" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "en", "targetLanguage": "ta" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "en", "targetLanguage": "kn" } } },
+                { "taskType": "translation", "config": { "language": { "sourceLanguage": "en", "targetLanguage": "ml" } } },
                 { "taskType": "tts", "config": { "language": { "sourceLanguage": "te" } } },
+                { "taskType": "tts", "config": { "language": { "sourceLanguage": "hi" } } },
+                { "taskType": "tts", "config": { "language": { "sourceLanguage": "ta" } } },
+                { "taskType": "tts", "config": { "language": { "sourceLanguage": "kn" } } },
+                { "taskType": "tts", "config": { "language": { "sourceLanguage": "ml" } } },
                 { "taskType": "tts", "config": { "language": { "sourceLanguage": "en" } } }
               ],
               "pipelineRequestConfig": {

@@ -86,6 +86,18 @@ fun WaiterBridgeScreen(
     var recordingTarget by remember { mutableStateOf<String?>(null) } // "DINER", "STAFF", "FEEDBACK"
     var activeRaisedComplaint by remember { mutableStateOf<RaisedComplaintData?>(null) }
     var showComplaintConfirmation by remember { mutableStateOf(false) }
+    var dinerDropdownOpen by remember { mutableStateOf(false) }
+    var staffDropdownOpen by remember { mutableStateOf(false) }
+    val bridgeLanguages = remember {
+        listOf(
+            Pair("te", "తెలుగు"),
+            Pair("hi", "हिंदी"),
+            Pair("ta", "தமிழ்"),
+            Pair("kn", "ಕನ್ನಡ"),
+            Pair("ml", "മലയാളം"),
+            Pair("en", "English")
+        )
+    }
 
     // Wave animations for listening state
     val infiniteTransition = rememberInfiniteTransition(label = "micPulse")
@@ -296,53 +308,29 @@ fun WaiterBridgeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
-                .systemBarsPadding()
         ) {
-            // 1. TOP HEADER POLISH (Clean, small header title & subtitle, no large banner)
+            // 1. COMPACT SMALL TITLE HEADER (Clean 16sp bold title, zero extra top spacing)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 10.dp)
+                    .padding(top = 0.dp, bottom = 6.dp)
             ) {
+                Text(
+                    text = "Waiter Bridge",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NeoTextPrimary,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { heading() }
+                )
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(NeoPrimaryContainer)
-                            .border(1.dp, NeoBorder, RoundedCornerShape(10.dp))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.SupportAgent,
-                            contentDescription = null,
-                            tint = NeoPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Waiter Bridge",
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = NeoTextPrimary,
-                            modifier = Modifier.semantics { heading() }
-                        )
-                        Text(
-                            text = "Cross-Language Staff Communication",
-                            fontSize = 12.sp,
-                            color = NeoTextSecondary
-                        )
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
                     // Flip Card Button
                     IconButton(
                         onClick = {
@@ -350,8 +338,7 @@ fun WaiterBridgeScreen(
                             controller.toggleFlipForStaff()
                         },
                         modifier = Modifier
-                            .padding(end = 6.dp)
-                            .size(36.dp)
+                            .size(32.dp)
                             .clip(CircleShape)
                             .background(if (state.isFlippedForStaff) NeoPrimary else NeoSurface)
                             .border(1.dp, NeoBorder, CircleShape)
@@ -360,7 +347,7 @@ fun WaiterBridgeScreen(
                             imageVector = Icons.Default.Flip,
                             contentDescription = "Flip staff card for waiter viewing",
                             tint = if (state.isFlippedForStaff) NeoOnPrimary else NeoTextPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
@@ -368,8 +355,7 @@ fun WaiterBridgeScreen(
                         IconButton(
                             onClick = onStopAudio,
                             modifier = Modifier
-                                .padding(end = 6.dp)
-                                .size(36.dp)
+                                .size(32.dp)
                                 .clip(CircleShape)
                                 .background(NonVegRedContainer)
                                 .border(1.dp, NonVegRed, CircleShape)
@@ -378,7 +364,7 @@ fun WaiterBridgeScreen(
                                 imageVector = Icons.Default.Stop,
                                 contentDescription = "Stop speech playback",
                                 tint = NonVegRed,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
@@ -390,7 +376,7 @@ fun WaiterBridgeScreen(
                             onClose()
                         },
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(32.dp)
                             .clip(CircleShape)
                             .background(NeoSurface)
                             .border(1.dp, NeoBorder, CircleShape)
@@ -399,7 +385,7 @@ fun WaiterBridgeScreen(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close Waiter Bridge",
                             tint = NeoTextPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -438,31 +424,51 @@ fun WaiterBridgeScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(5.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf("te" to "తెలుగు", "hi" to "हिंदी", "en" to "Eng").forEach { (code, label) ->
-                                val isSelected = state.dinerLanguage == code
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(30.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) NeoPrimary else NeoSurfacePressed)
-                                        .border(
-                                            1.dp,
-                                            if (isSelected) NeoPrimary else NeoBorder,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                        .clickable {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(NeoSurfacePressed)
+                                    .border(1.dp, NeoPrimary, RoundedCornerShape(8.dp))
+                                    .clickable { dinerDropdownOpen = true }
+                                    .padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = bridgeLanguages.find { it.first == state.dinerLanguage }?.second ?: "తెలుగు",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoPrimary
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = NeoPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = dinerDropdownOpen,
+                                onDismissRequest = { dinerDropdownOpen = false }
+                            ) {
+                                bridgeLanguages.forEach { (code, label) ->
+                                    val isSelected = state.dinerLanguage == code
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = label,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) NeoPrimary else NeoTextPrimary
+                                            )
+                                        },
+                                        onClick = {
+                                            dinerDropdownOpen = false
                                             hapticEngine.trigger(HapticPattern.CLICK)
                                             controller.setDinerLanguage(code)
                                         }
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) NeoOnPrimary else NeoTextPrimary
                                     )
                                 }
                             }
@@ -496,31 +502,51 @@ fun WaiterBridgeScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(5.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf("hi" to "हिंदी", "te" to "తెలుగు", "en" to "Eng").forEach { (code, label) ->
-                                val isSelected = state.staffLanguage == code
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(30.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) Color(0xFF0D9488) else NeoSurfacePressed)
-                                        .border(
-                                            1.dp,
-                                            if (isSelected) Color(0xFF0D9488) else NeoBorder,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                        .clickable {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(NeoSurfacePressed)
+                                    .border(1.dp, Color(0xFF0D9488), RoundedCornerShape(8.dp))
+                                    .clickable { staffDropdownOpen = true }
+                                    .padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = bridgeLanguages.find { it.first == state.staffLanguage }?.second ?: "हिंदी",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0D9488)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = Color(0xFF0D9488),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = staffDropdownOpen,
+                                onDismissRequest = { staffDropdownOpen = false }
+                            ) {
+                                bridgeLanguages.forEach { (code, label) ->
+                                    val isSelected = state.staffLanguage == code
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = label,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) Color(0xFF0D9488) else NeoTextPrimary
+                                            )
+                                        },
+                                        onClick = {
+                                            staffDropdownOpen = false
                                             hapticEngine.trigger(HapticPattern.CLICK)
                                             controller.setStaffLanguage(code)
                                         }
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else NeoTextPrimary
                                     )
                                 }
                             }

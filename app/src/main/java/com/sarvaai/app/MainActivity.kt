@@ -16,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -76,6 +78,7 @@ import com.sarvaai.app.menu.extractor.MenuExtractor
 import com.sarvaai.app.service.wakeword.SvaraWakeWordService
 import com.sarvaai.app.service.wakeword.WakeWordDetector
 import com.sarvaai.app.ui.components.*
+import com.sarvaai.app.ui.screens.ageing.StepByStepAgeingConcierge
 import com.sarvaai.app.ui.screens.bill.SmartBillSplitScreen
 import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
@@ -85,6 +88,8 @@ import com.sarvaai.app.ui.screens.debug.DebugSignalPanel
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
 import com.sarvaai.app.ui.screens.hub.HubSubTab
 import com.sarvaai.app.ui.screens.hub.OrderAndServiceHubScreen
+import com.sarvaai.app.ui.screens.onboarding.OnboardingPreferences
+import com.sarvaai.app.ui.screens.onboarding.OnboardingScreen
 import com.sarvaai.app.ui.screens.waiter.WaiterBridgeScreen
 import com.sarvaai.app.ui.theme.*
 import kotlinx.coroutines.Job
@@ -94,6 +99,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 enum class AppScreen {
+    ONBOARDING,
     PLAYGROUND,
     CAMERA_CAPTURE,
     MENU_BROWSER,
@@ -103,7 +109,8 @@ enum class AppScreen {
     WAITER_BRIDGE,
     SMART_BILL,
     RAW_VS_ACCESSIBLE,
-    DEBUG_SIGNAL_PANEL
+    DEBUG_SIGNAL_PANEL,
+    AGEING_CONCIERGE
 }
 
 class MainActivity : ComponentActivity() {
@@ -172,8 +179,8 @@ class MainActivity : ComponentActivity() {
             registerReceiver(closeAppReceiver, filter)
         }
 
-        // Start Wake-Word Continuous Foreground Service
-        SvaraWakeWordService.startService(this)
+        // Svara Wake-Word Continuous Foreground Service (temporarily disabled per user request)
+        // SvaraWakeWordService.startService(this)
 
         hapticEngine = HapticFeedbackEngine(this)
         earconEngine = EarconEngine(this)
@@ -193,7 +200,7 @@ class MainActivity : ComponentActivity() {
         try {
             androidTts = android.speech.tts.TextToSpeech(this) { status ->
                 if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                    androidTts?.language = java.util.Locale("hi", "IN")
+                    androidTts?.language = java.util.Locale("te", "IN")
                 }
             }
         } catch (e: Exception) {
@@ -207,12 +214,48 @@ class MainActivity : ComponentActivity() {
             autoStartListeningTrigger++
         }
 
+        val isOnboardingCompleted = OnboardingPreferences.isOnboardingCompleted(this)
+
         setContent {
+            val multiplePermissionsLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestMultiplePermissions()
+            ) { permissions ->
+                val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+                val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
+                Log.i("MainActivity", "Permissions callback: audio=$audioGranted, camera=$cameraGranted")
+                if (audioGranted) {
+                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                }
+            }
+
             var isHighContrast by remember { mutableStateOf(false) }
-            var currentScreen by remember { mutableStateOf(AppScreen.PLAYGROUND) }
-            var selectedLanguage by remember { mutableStateOf("hi") }
-            var isWakeWordServiceRunning by remember { mutableStateOf(true) }
+            var currentScreen by remember {
+                mutableStateOf(if (isOnboardingCompleted) AppScreen.PLAYGROUND else AppScreen.ONBOARDING)
+            }
+            var selectedLanguage by remember { mutableStateOf("te") }
+            var isWakeWordServiceRunning by remember { mutableStateOf(false) }
             var showApiKeyDialog by remember { mutableStateOf(false) }
+            var showAgeingConcierge by remember { mutableStateOf(false) }
+
+            val inferenceFlags by profileInferenceEngine.flags.collectAsState()
+
+            // Dynamic Senior / Ageing adaptation: apply 0.8f slow speed when slowTts is true, restore 1.0f when false
+            LaunchedEffect(inferenceFlags.slowTts) {
+                if (inferenceFlags.slowTts) {
+                    speechPlayer.setPlaybackSpeed(0.8f)
+                    androidTts?.setSpeechRate(0.8f)
+                } else {
+                    speechPlayer.setPlaybackSpeed(1.0f)
+                    androidTts?.setSpeechRate(1.0f)
+                }
+            }
+
+            // Automatically open Step-by-Step Senior Help Concierge when stepByStep flag activates
+            LaunchedEffect(inferenceFlags.stepByStep) {
+                if (inferenceFlags.stepByStep) {
+                    showAgeingConcierge = true
+                }
+            }
 
             var menuSections by remember { mutableStateOf<List<MenuSectionEntity>>(emptyList()) }
             var menuItemsBySection by remember { mutableStateOf<Map<String, List<MenuItemEntity>>>(emptyMap()) }
@@ -261,6 +304,9 @@ class MainActivity : ComponentActivity() {
                             val loc = when (lang.lowercase()) {
                                 "te" -> java.util.Locale("te", "IN")
                                 "hi" -> java.util.Locale("hi", "IN")
+                                "ta" -> java.util.Locale("ta", "IN")
+                                "kn" -> java.util.Locale("kn", "IN")
+                                "ml" -> java.util.Locale("ml", "IN")
                                 else -> java.util.Locale.ENGLISH
                             }
                             androidTts?.language = loc
@@ -271,8 +317,8 @@ class MainActivity : ComponentActivity() {
             }
 
             // Mobile Hardware / Gesture Back Button Handling
-            // If user is on any screen other than PLAYGROUND, navigating back goes to PLAYGROUND and stops audio
-            BackHandler(enabled = currentScreen != AppScreen.PLAYGROUND) {
+            // If user is on any screen other than PLAYGROUND or ONBOARDING, navigating back goes to PLAYGROUND and stops audio
+            BackHandler(enabled = currentScreen != AppScreen.PLAYGROUND && currentScreen != AppScreen.ONBOARDING) {
                 stopSpeech()
                 currentScreen = AppScreen.PLAYGROUND
             }
@@ -280,40 +326,54 @@ class MainActivity : ComponentActivity() {
             SarvaTheme(isHighContrast = isHighContrast) {
                 Scaffold(
                     topBar = {
-                        NeomorphicTopAppBar(
-                            selectedLanguage = selectedLanguage,
-                            onLanguageSelected = { newLang ->
-                                stopSpeech()
-                                selectedLanguage = newLang
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                            },
-                            isWakeWordActive = isWakeWordServiceRunning,
-                            onToggleWakeWord = {
-                                isWakeWordServiceRunning = !isWakeWordServiceRunning
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                                if (isWakeWordServiceRunning) {
-                                    SvaraWakeWordService.startService(this@MainActivity)
-                                } else {
-                                    SvaraWakeWordService.stopService(this@MainActivity)
-                                }
-                            },
-                            onOpenApiKeyDialog = {
-                                hapticEngine.trigger(HapticPattern.CLICK)
-                                showApiKeyDialog = true
-                            }
-                        )
-                    },
-                    bottomBar = {
-                        NeomorphicBottomNavBar(
-                            currentScreen = currentScreen,
-                            onScreenSelected = { targetScreen ->
-                                if (currentScreen != targetScreen) {
+                        if (currentScreen != AppScreen.ONBOARDING) {
+                            NeomorphicTopAppBar(
+                                selectedLanguage = selectedLanguage,
+                                onLanguageSelected = { newLang ->
+                                    stopSpeech()
+                                    selectedLanguage = newLang
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                },
+                                isWakeWordActive = isWakeWordServiceRunning,
+                                onToggleWakeWord = {
+                                    isWakeWordServiceRunning = !isWakeWordServiceRunning
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    if (isWakeWordServiceRunning) {
+                                        SvaraWakeWordService.startService(this@MainActivity)
+                                    } else {
+                                        SvaraWakeWordService.stopService(this@MainActivity)
+                                    }
+                                },
+                                onOpenApiKeyDialog = {
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    showApiKeyDialog = true
+                                },
+                                isAgeingModeActive = inferenceFlags.slowTts || inferenceFlags.largeText || inferenceFlags.stepByStep,
+                                onToggleAgeingMode = {
+                                    hapticEngine.trigger(HapticPattern.CLICK)
+                                    profileInferenceEngine.toggleManualAgeingMode()
+                                },
+                                onOpenOnboarding = {
                                     stopSpeech()
                                     hapticEngine.trigger(HapticPattern.CLICK)
-                                    currentScreen = targetScreen
+                                    currentScreen = AppScreen.ONBOARDING
                                 }
-                            }
-                        )
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        if (currentScreen != AppScreen.ONBOARDING) {
+                            NeomorphicBottomNavBar(
+                                currentScreen = currentScreen,
+                                onScreenSelected = { targetScreen ->
+                                    if (currentScreen != targetScreen) {
+                                        stopSpeech()
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        currentScreen = targetScreen
+                                    }
+                                }
+                            )
+                        }
                     },
                     containerColor = MaterialTheme.colorScheme.background
                 ) { paddingValues ->
@@ -323,6 +383,25 @@ class MainActivity : ComponentActivity() {
                             .padding(paddingValues)
                     ) {
                         when (currentScreen) {
+                            AppScreen.ONBOARDING -> {
+                                OnboardingScreen(
+                                    selectedLanguage = selectedLanguage,
+                                    onLanguageSelected = { newLang ->
+                                        selectedLanguage = newLang
+                                    },
+                                    onComplete = {
+                                        OnboardingPreferences.setOnboardingCompleted(this@MainActivity, true)
+                                        multiplePermissionsLauncher.launch(
+                                            arrayOf(
+                                                Manifest.permission.RECORD_AUDIO,
+                                                Manifest.permission.CAMERA
+                                            )
+                                        )
+                                        currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
                             AppScreen.PLAYGROUND -> {
                                 MainAudioPlaygroundScreen(
                                     audioRecorder = audioRecorder,
@@ -352,6 +431,10 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onOpenApiKeyDialog = { showApiKeyDialog = true },
+                                    onOpenStepByStepConcierge = {
+                                        hapticEngine.trigger(HapticPattern.CLICK)
+                                        showAgeingConcierge = true
+                                    },
                                     onCloseApp = {
                                         finishAndRemoveTask()
                                         finishAffinity()
@@ -547,12 +630,26 @@ class MainActivity : ComponentActivity() {
                                     onSpeakAudio = { textToSpeak, langToSpeak ->
                                         playSpeech(textToSpeak, langToSpeak)
                                     },
-                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
                                     onStopAudio = { stopSpeech() },
-                                    onStopNarration = { stopSpeech() },
                                     onNavigateToPlayground = {
                                         stopSpeech()
                                         currentScreen = AppScreen.PLAYGROUND
+                                    }
+                                )
+                            }
+
+                            AppScreen.AGEING_CONCIERGE -> {
+                                StepByStepAgeingConcierge(
+                                    cartDao = database.cartDao(),
+                                    hapticEngine = hapticEngine,
+                                    earconEngine = earconEngine,
+                                    selectedLanguage = selectedLanguage,
+                                    onSpeakNarration = { playSpeech(it, selectedLanguage) },
+                                    onStopNarration = { stopSpeech() },
+                                    onNavigateToCart = {
+                                        stopSpeech()
+                                        orderHubInitialTab = HubSubTab.CART
+                                        currentScreen = AppScreen.ORDER_SERVICE_HUB
                                     },
                                     onClose = {
                                         stopSpeech()
@@ -626,6 +723,40 @@ class MainActivity : ComponentActivity() {
                             shape = RoundedCornerShape(20.dp)
                         )
                     }
+
+                    // Step-by-Step Senior Help Concierge Dialog Overlay
+                    if (showAgeingConcierge) {
+                        StepByStepAgeingConcierge(
+                            onClose = {
+                                stopSpeech()
+                                showAgeingConcierge = false
+                            },
+                            selectedLanguage = selectedLanguage,
+                            onSelectLanguage = { lang ->
+                                selectedLanguage = lang
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                            },
+                            onSpeak = { text -> playSpeech(text, selectedLanguage) },
+                            onStopAudio = { stopSpeech() },
+                            onNavigateToMenu = {
+                                stopSpeech()
+                                showAgeingConcierge = false
+                                currentScreen = AppScreen.MENU_BROWSER
+                            },
+                            onNavigateToCart = {
+                                stopSpeech()
+                                showAgeingConcierge = false
+                                orderHubInitialTab = HubSubTab.CART
+                                currentScreen = AppScreen.ORDER_SERVICE_HUB
+                            },
+                            onNavigateToWaiter = {
+                                stopSpeech()
+                                showAgeingConcierge = false
+                                orderHubInitialTab = HubSubTab.WAITER_BRIDGE
+                                currentScreen = AppScreen.ORDER_SERVICE_HUB
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -634,13 +765,17 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         SvaraWakeWordService.isAppInForeground = true
-        SvaraWakeWordService.pauseListening(this)
+        if (SvaraWakeWordService.IS_WAKE_WORD_ENABLED) {
+            SvaraWakeWordService.pauseListening(this)
+        }
     }
 
     override fun onPause() {
         super.onPause()
         SvaraWakeWordService.isAppInForeground = false
-        SvaraWakeWordService.resumeListening(this)
+        if (SvaraWakeWordService.IS_WAKE_WORD_ENABLED) {
+            SvaraWakeWordService.resumeListening(this)
+        }
         stopGlobalSpeech()
         if (::audioRecorder.isInitialized) {
             audioRecorder.stopRecording()
@@ -692,6 +827,11 @@ fun NeomorphicTopAppBar(
     isWakeWordActive: Boolean,
     onToggleWakeWord: () -> Unit,
     onOpenApiKeyDialog: () -> Unit,
+    onOpenStepByStepConcierge: () -> Unit = {},
+    onOpenOnboarding: () -> Unit = {},
+    isAgeingModeActive: Boolean = false,
+    onToggleAgeingMode: () -> Unit = {},
+    onCloseApp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -728,11 +868,12 @@ fun NeomorphicTopAppBar(
                                 cornerRadius = 19.dp
                             )
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = null,
-                            tint = NeoPrimary,
-                            modifier = Modifier.size(22.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.app_logo),
+                            contentDescription = "SvaraAI Logo",
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
                         )
                     }
 
@@ -759,6 +900,36 @@ fun NeomorphicTopAppBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Ageing / Senior Mode Button / Badge
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = if (isAgeingModeActive) NeoPrimaryContainer else NeoSurface,
+                                borderColor = if (isAgeingModeActive) NeoPrimary else NeoBorder,
+                                elevation = 3.dp,
+                                cornerRadius = 19.dp
+                            )
+                            .clickable(onClick = onToggleAgeingMode)
+                            .semantics {
+                                contentDescription = if (isAgeingModeActive) {
+                                    "Senior and Ageing Mode active: 0.8x speech, step-by-step guidance. Tap to disable"
+                                } else {
+                                    "Senior and Ageing Mode inactive. Tap to enable"
+                                }
+                                role = Role.Button
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Elderly,
+                            contentDescription = null,
+                            tint = if (isAgeingModeActive) NeoPrimary else NeoTextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // Wake Word Status Badge / Button
                     Box(
                         contentAlignment = Alignment.Center,
@@ -810,16 +981,66 @@ fun NeomorphicTopAppBar(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+
+                    // Feature Guide / Onboarding Tour Button
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .neomorphicSurface(
+                                shape = CircleShape,
+                                surfaceColor = NeoSurface,
+                                borderColor = NeoBorder,
+                                elevation = 3.dp,
+                                cornerRadius = 19.dp
+                            )
+                            .clickable(onClick = onOpenOnboarding)
+                            .semantics {
+                                contentDescription = "Feature guide and onboarding walkthrough"
+                                role = Role.Button
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = NeoTextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Row 2: Global Segmented Language Switcher (English, हिन्दी, తెలుగు)
-            NeomorphicLanguageSelector(
-                selectedLanguage = selectedLanguage,
-                onLanguageSelected = onLanguageSelected
-            )
+            // Row 2: Indic Voice Language Dropdown Selector
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = null,
+                        tint = NeoPrimary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Voice Assistant Language",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = NeoTextSecondary
+                    )
+                }
+
+                NeomorphicLanguageSelector(
+                    selectedLanguage = selectedLanguage,
+                    onLanguageSelected = onLanguageSelected
+                )
+            }
         }
     }
 }
@@ -900,7 +1121,7 @@ fun NeomorphicBottomNavBar(
             ) {
                 tabs.forEach { tab ->
                     val isSelected = when (tab.screen) {
-                        AppScreen.PLAYGROUND -> currentScreen == AppScreen.PLAYGROUND || currentScreen == AppScreen.RAW_VS_ACCESSIBLE || currentScreen == AppScreen.DEBUG_SIGNAL_PANEL
+                        AppScreen.PLAYGROUND -> currentScreen == AppScreen.PLAYGROUND || currentScreen == AppScreen.RAW_VS_ACCESSIBLE || currentScreen == AppScreen.DEBUG_SIGNAL_PANEL || currentScreen == AppScreen.AGEING_CONCIERGE
                         AppScreen.CAMERA_CAPTURE -> currentScreen == AppScreen.CAMERA_CAPTURE || currentScreen == AppScreen.MENU_BROWSER
                         AppScreen.COMPARE_DISHES -> currentScreen == AppScreen.COMPARE_DISHES
                         AppScreen.ORDER_SERVICE_HUB -> currentScreen == AppScreen.ORDER_SERVICE_HUB || currentScreen == AppScreen.VOICE_CART || currentScreen == AppScreen.WAITER_BRIDGE || currentScreen == AppScreen.SMART_BILL
@@ -985,6 +1206,7 @@ fun MainAudioPlaygroundScreen(
     onToggleHighContrast: () -> Unit,
     onToggleWakeWord: () -> Unit = {},
     onOpenApiKeyDialog: () -> Unit = {},
+    onOpenStepByStepConcierge: () -> Unit = {},
     onCloseApp: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
@@ -1762,7 +1984,65 @@ fun MainAudioPlaygroundScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            // Senior Assistance • Step-by-Step Guided Ordering Feature Button (Ageing Barrier)
+            val seniorInteraction = remember { MutableInteractionSource() }
+            val isSeniorPressed by seniorInteraction.collectIsPressedAsState()
+            val seniorScale by animateFloatAsState(
+                targetValue = if (isSeniorPressed) 0.96f else 1.0f,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                label = "senior_scale"
+            )
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .scale(seniorScale)
+                    .neomorphicSurface(
+                        shape = RoundedCornerShape(14.dp),
+                        surfaceColor = NeoSurface,
+                        borderColor = VegGreen,
+                        borderWidth = 1.5.dp,
+                        elevation = 4.dp,
+                        isPressed = isSeniorPressed,
+                        cornerRadius = 14.dp
+                    )
+                    .clickable(
+                        interactionSource = seniorInteraction,
+                        indication = null,
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            onOpenStepByStepConcierge()
+                        }
+                    )
+                    .padding(horizontal = 14.dp)
+                    .semantics {
+                        contentDescription = "Step-by-Step Senior Help: Assisted Ordering Concierge"
+                        role = Role.Button
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Elderly,
+                        contentDescription = null,
+                        tint = VegGreen,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Step-by-Step Senior Help",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VegGreen
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Compare Dishes Feature Button
             val compareInteraction = remember { MutableInteractionSource() }
@@ -1822,6 +2102,67 @@ fun MainAudioPlaygroundScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Feature Tour & Capabilities Guide Button
+            val tourInteraction = remember { MutableInteractionSource() }
+            val isTourPressed by tourInteraction.collectIsPressedAsState()
+            val tourScale by animateFloatAsState(
+                targetValue = if (isTourPressed) 0.96f else 1.0f,
+                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                label = "tour_scale"
+            )
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .scale(tourScale)
+                    .neomorphicSurface(
+                        shape = RoundedCornerShape(14.dp),
+                        surfaceColor = NeoSurface,
+                        borderColor = NeoBorder,
+                        borderWidth = 1.dp,
+                        elevation = 4.dp,
+                        isPressed = isTourPressed,
+                        cornerRadius = 14.dp
+                    )
+                    .clickable(
+                        interactionSource = tourInteraction,
+                        indication = null,
+                        onClick = {
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            onOpenScreen(AppScreen.ONBOARDING)
+                        }
+                    )
+                    .padding(horizontal = 14.dp)
+                    .semantics {
+                        contentDescription = "Feature Tour & 9-Card Capabilities Walkthrough"
+                        role = Role.Button
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = NeoTextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Explore All 9 SvaraAI Capabilities",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeoTextPrimary
+                    )
+                }
+            }
+
+            /* Temporarily disabled per user request: Jury Mode & Adaptation Signals UI cards
             Spacer(modifier = Modifier.height(10.dp))
 
             // Advanced Diagnostic & Jury Navigation Buttons
@@ -1943,6 +2284,7 @@ fun MainAudioPlaygroundScreen(
                     }
                 }
             }
+            */
 
             Spacer(modifier = Modifier.height(24.dp))
         }

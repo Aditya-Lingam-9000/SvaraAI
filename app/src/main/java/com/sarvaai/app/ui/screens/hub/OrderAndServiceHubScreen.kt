@@ -132,7 +132,7 @@ fun OrderAndServiceHubScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp)
                     .height(48.dp)
                     .neomorphicSurface(
                         shape = RoundedCornerShape(24.dp),

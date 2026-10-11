@@ -39,24 +39,56 @@ class BhashiniTtsClient(
     companion object {
         private const val TAG = "BhashiniTtsClient"
 
-        // AnuvaadHub Sandbox Dedicated TTS Endpoints (Primary + Fallbacks)
-        private val PRIMARY_TTS_ENDPOINTS = mapOf(
-            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca89ae0b95a6a1ea34a92", // IITM_TTS_Hindi
-            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca880e0b95a6a1ea34a91", // IITM_TTS_Telugu
-            "en" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca8b3e0b95a6a1ea34a93"  // IITM_TTS_English
+        // Bhashini Voice Locale Mappings (ta-IN, kn-IN, ml-IN, te-IN, hi-IN, en-IN)
+        val VOICE_LOCALES = mapOf(
+            "te" to "te-IN",
+            "hi" to "hi-IN",
+            "ta" to "ta-IN",
+            "kn" to "kn-IN",
+            "ml" to "ml-IN",
+            "en" to "en-IN"
         )
 
-        private val FALLBACK_TTS_ENDPOINTS = mapOf(
+        // Bhashini Service Mappings
+        val SERVICE_MAPPINGS = mapOf(
+            "te" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+            "hi" to "ai4bharat/indic-tts-coqui-indo-aryan-gpu",
+            "ta" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+            "kn" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+            "ml" to "ai4bharat/indic-tts-coqui-dravidian-gpu",
+            "en" to "ai4bharat/indic-tts-coqui-indo-aryan-gpu"
+        )
+
+        // AnuvaadHub Sandbox Dedicated TTS Endpoints (Primary + Fallbacks)
+        val PRIMARY_TTS_ENDPOINTS = mapOf(
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca880e0b95a6a1ea34a91", // IITM_TTS_Telugu
+            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca89ae0b95a6a1ea34a92", // IITM_TTS_Hindi
+            "en" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca8b3e0b95a6a1ea34a93", // IITM_TTS_English
+            "kn" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bca94de0b95a6a1ea34a98", // IITM_TTS_Kannada
+            "ta" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bcaa9ce0b95a6a1ea34a9d", // IITM_TTS_Tamil
+            "ml" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/67bcab01e0b95a6a1ea34a9f"  // IITM_TTS_Malayalam
+        )
+
+        val FALLBACK_TTS_ENDPOINTS = mapOf(
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68d2468f08531bc3c5ccf47d", // FastSpeech2_Telugu
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68c1244c747a9002950e94f8", // FastSpeech2_Hindi
-            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68d2468f08531bc3c5ccf47d"  // FastSpeech2_Telugu
+            "kn" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68d2468f08531bc3c5ccf471", // FastSpeech2_Kannada
+            "ta" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68d2468f08531bc3c5ccf47c", // FastSpeech2_Tamil
+            "ml" to "https://canvas.iiit.ac.in/sandboxbeprod/generate_tts/68d2468f08531bc3c5ccf474"  // FastSpeech2_Malayalam
         )
 
         // English -> Native Target MT Endpoints
-        private val MT_EN_TO_TARGET_ENDPOINTS = mapOf(
+        val MT_EN_TO_TARGET_ENDPOINTS = mapOf(
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316389a", // English -> Telugu
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316383c", // English -> Hindi
-            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316389a"  // English -> Telugu
+            "kn" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb923163823", // English -> Kannada
+            "ta" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb9231638be", // English -> Tamil
+            "ml" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb9231638b7"  // English -> Malayalam
         )
     }
+
+    fun getVoiceLocale(lang: String): String = VOICE_LOCALES[lang.lowercase()] ?: "en-IN"
+    fun getServiceId(lang: String): String = SERVICE_MAPPINGS[lang.lowercase()] ?: "ai4bharat/indic-tts-coqui-indo-aryan-gpu"
 
     private val cacheDir: File? by lazy {
         context?.let { ctx ->
@@ -74,9 +106,26 @@ class BhashiniTtsClient(
      * Sanitizes text to remove problematic symbols (e.g. ₹, &, %, /) that cause backend TTS models to return HTTP 422 or 500.
      */
     fun sanitizeForTts(text: String, lang: String): String {
+        val currencyWord = when (lang.lowercase()) {
+            "hi" -> " रुपये "
+            "te" -> " రూపాయలు "
+            "ta" -> " ரூபாய் "
+            "kn" -> " ರೂಪಾಯಿ "
+            "ml" -> " രൂപ "
+            else -> " rupees "
+        }
+        val andWord = when (lang.lowercase()) {
+            "hi" -> " और "
+            "te" -> " మరియు "
+            "ta" -> " மற்றும் "
+            "kn" -> " ಮತ್ತು "
+            "ml" -> " ഒപ്പം "
+            else -> " and "
+        }
+
         var t = text
-            .replace("₹", if (lang == "hi") " रुपये " else if (lang == "te") " రూపాయలు " else " rupees ")
-            .replace("&", if (lang == "hi") " और " else if (lang == "te") " మరియు " else " and ")
+            .replace("₹", currencyWord)
+            .replace("&", andWord)
             .replace("+", " and ")
             .replace("/", " ")
             .replace("\\", " ")
@@ -91,13 +140,19 @@ class BhashiniTtsClient(
     fun detectScriptLanguage(text: String): String? {
         if (text.any { it in '\u0C00'..'\u0C7F' }) return "te"
         if (text.any { it in '\u0900'..'\u097F' }) return "hi"
+        if (text.any { it in '\u0B80'..'\u0BFF' }) return "ta"
+        if (text.any { it in '\u0C80'..'\u0CFF' }) return "kn"
+        if (text.any { it in '\u0D00'..'\u0D7F' }) return "ml"
         return null
     }
 
     private fun isAlreadyInTargetScript(text: String, lang: String): Boolean {
-        return when (lang) {
+        return when (lang.lowercase()) {
             "hi" -> text.any { it in '\u0900'..'\u097F' }
             "te" -> text.any { it in '\u0C00'..'\u0C7F' }
+            "ta" -> text.any { it in '\u0B80'..'\u0BFF' }
+            "kn" -> text.any { it in '\u0C80'..'\u0CFF' }
+            "ml" -> text.any { it in '\u0D00'..'\u0D7F' }
             else -> false
         }
     }

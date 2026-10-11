@@ -9,10 +9,15 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -656,8 +661,17 @@ fun NeomorphicPill(
 }
 
 /**
- * Top-bar Segmented Neomorphic Language Switcher for Indic Multilingual Speech (English, हिन्दी, తెలుగు).
- * Zero emojis, vector icons only.
+ * Modern Neomorphic Dropdown Selector for Indic Multilingual Speech.
+ * Supports 6 languages:
+ * 1. Telugu (te, "తెలుగు") - Default
+ * 2. Hindi (hi, "हिन्दी")
+ * 3. Tamil (ta, "தமிழ்")
+ * 4. Kannada (kn, "ಕನ್ನಡ")
+ * 5. Malayalam (ml, "മലയാളം")
+ * 6. English (en, "English")
+ *
+ * Displays a compact neomorphic pill/button (height 38-40dp) with currently selected language native name + ArrowDropDown.
+ * When clicked, opens a neomorphic-styled dropdown menu displaying all 6 languages with native names and checkmark.
  */
 @Composable
 fun NeomorphicLanguageSelector(
@@ -666,87 +680,690 @@ fun NeomorphicLanguageSelector(
     modifier: Modifier = Modifier
 ) {
     val languages = listOf(
-        Pair("en", "English"),
+        Pair("te", "తెలుగు"),
         Pair("hi", "हिन्दी"),
-        Pair("te", "తెలుగు")
+        Pair("ta", "தமிழ்"),
+        Pair("kn", "ಕನ್ನಡ"),
+        Pair("ml", "മലയാളം"),
+        Pair("en", "English")
     )
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .neomorphicSurface(
-                shape = RoundedCornerShape(24.dp),
-                surfaceColor = NeoSurfacePressed,
-                borderColor = NeoBorder,
-                elevation = 2.dp,
-                isPressed = true,
-                cornerRadius = 24.dp
-            )
-            .padding(6.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        languages.forEach { (code, nativeName) ->
-            val isSelected = selectedLanguage.equals(code, ignoreCase = true)
-            val interactionSource = remember { MutableInteractionSource() }
-            val isPressed by interactionSource.collectIsPressedAsState()
-            val scale by animateFloatAsState(
-                targetValue = if (isPressed) 0.96f else 1.0f,
-                animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                label = "lang_scale"
-            )
+    var expanded by remember { mutableStateOf(false) }
+    val currentLang = languages.find { it.first.equals(selectedLanguage, ignoreCase = true) }
+        ?: languages.first() // Telugu is default
 
-            Box(
-                contentAlignment = Alignment.Center,
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed || expanded) 0.96f else 1.0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "lang_dropdown_scale"
+    )
+
+    Box(
+        modifier = modifier.wrapContentSize(Alignment.TopStart)
+    ) {
+        // Compact Neomorphic Button / Pill (Height: 38dp)
+        Row(
+            modifier = Modifier
+                .height(38.dp)
+                .scale(scale)
+                .neomorphicSurface(
+                    shape = RoundedCornerShape(19.dp),
+                    surfaceColor = if (expanded) NeoSurfacePressed else NeoSurface,
+                    lightColor = if (expanded) Color(0x6693C5FD) else NeoLightShadow,
+                    darkColor = if (expanded) Color(0x661E3A8A) else NeoDarkShadow,
+                    borderColor = if (expanded) NeoPrimary else NeoBorder,
+                    elevation = if (expanded) 2.dp else 4.dp,
+                    isPressed = expanded || isPressed,
+                    cornerRadius = 19.dp
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = { expanded = !expanded }
+                )
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Translate,
+                contentDescription = null,
+                tint = NeoPrimary,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = currentLang.second,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = NeoTextPrimary,
+                maxLines = 1,
+                softWrap = false
+            )
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = if (expanded) "Close language options" else "Select language",
+                tint = NeoTextSecondary,
                 modifier = Modifier
-                    .weight(1f)
-                    .height(42.dp)
-                    .scale(scale)
-                    .neomorphicSurface(
-                        shape = RoundedCornerShape(20.dp),
-                        surfaceColor = if (isSelected) NeoPrimary else NeoSurface,
-                        lightColor = if (isSelected) Color(0x6693C5FD) else NeoLightShadow,
-                        darkColor = if (isSelected) Color(0x661E3A8A) else NeoDarkShadow,
-                        borderColor = if (isSelected) NeoPrimary else NeoBorder,
-                        elevation = if (isSelected) 3.dp else 2.dp,
-                        isPressed = !isSelected && isPressed,
-                        cornerRadius = 20.dp
-                    )
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = { onLanguageSelected(code) }
-                    )
-                    .padding(horizontal = 8.dp)
-                    .semantics {
-                        contentDescription = "$nativeName language option"
-                        role = Role.Tab
-                    }
+                    .size(20.dp)
+                    .rotate(if (expanded) 180f else 0f)
+            )
+        }
+
+        // Dropdown Menu displaying all 6 languages with native names & checkmark
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .widthIn(min = 180.dp)
+                .background(NeoSurface)
+                .border(1.dp, NeoBorder, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(16.dp))
+        ) {
+            languages.forEach { (code, nativeName) ->
+                val isSelected = selectedLanguage.equals(code, ignoreCase = true)
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = nativeName,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) NeoPrimary else NeoTextPrimary
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = NeoPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onLanguageSelected(code)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isSelected) NeoPrimaryContainer.copy(alpha = 0.35f) else Color.Transparent)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Step-by-Step Senior Help Concierge Dialog.
+ *
+ * Implements the unhurried, step-by-step assistance flow designed specifically for elderly diners:
+ * - One question at a time (Language -> Menu Explorer -> Dietary Customization -> Order & Waiter Help)
+ * - Extra-large tactile buttons and high contrast typography (20sp+ headings, 16sp+ options)
+ * - Persistent Repeat Aloud button with unhurried 0.8x speech narration
+ * - No timeouts that punish slowness
+ */
+@Composable
+fun StepByStepAgeingConcierge(
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    selectedLanguage: String = "te",
+    onSelectLanguage: ((String) -> Unit)? = null,
+    onSpeak: ((String) -> Unit)? = null,
+    onSpeakNarration: ((String) -> Unit)? = null,
+    onStopAudio: (() -> Unit)? = null,
+    onStopNarration: (() -> Unit)? = null,
+    onNavigateToMenu: (() -> Unit)? = null,
+    onNavigateToCart: (() -> Unit)? = null,
+    onNavigateToWaiter: (() -> Unit)? = null,
+    cartDao: Any? = null,
+    hapticEngine: Any? = null,
+    earconEngine: Any? = null
+) {
+    val effectiveSpeak = onSpeakNarration ?: onSpeak
+    val effectiveStop = onStopNarration ?: onStopAudio
+    var currentStep by remember { mutableIntStateOf(1) }
+    val totalSteps = 4
+    val scrollState = rememberScrollState()
+
+    val stepNarration = when (currentStep) {
+        1 -> when (selectedLanguage.lowercase()) {
+            "te" -> "మొదటి అడుగు: దయచేసి మీరు మాట్లాడాలనుకుంటున్న భాషను ఎంచుకోండి. తెలుగు, హిందీ, తమిళం, కన్నడ, మలయాళం లేదా ఇంగ్లీష్."
+            "hi" -> "पहला चरण: कृपया अपनी पसंदीदा भाषा चुनें - तेलुगु, हिन्दी, तमिल, कन्नड़, मलयालम, अथवा अंग्रेज़ी।"
+            "ta" -> "முதல் படி: தயவுசெய்து நீங்கள் பேச விரும்பும் மொழியைத் தேர்ந்தெடுக்கவும். தமிழ், தெலுங்கு, இந்தி, கன்னடம், மலையாளம் அல்லது ஆங்கிலம்."
+            "kn" -> "ಮೊದಲ ಹಂತ: ದಯವಿಟ್ಟು ನೀವು ಮಾತನಾಡಲು ಬಯಸುವ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ. ಕನ್ನಡ, ತೆಲುಗು, ಹಿಂದಿ, ತಮಿಳು, ಮಲಯಾಳಂ ಅಥವಾ ಇಂಗ್ಲಿಷ್."
+            "ml" -> "ആദ്യ പടി: ദയവായി നിങ്ങൾ സംസാരിക്കാൻ ആഗ്രഹിക്കുന്ന ഭാഷ തിരഞ്ഞെടുക്കുക. മലയാളം, തെലുങ്ക്, ഹിന്ദി, തമിഴ്, കന്നഡ അല്ലെങ്കിൽ ഇംഗ്ലീഷ്."
+            else -> "Step 1: First, which language would you prefer to speak? Telugu, Hindi, Tamil, Kannada, Malayalam, or English."
+        }
+        2 -> when (selectedLanguage.lowercase()) {
+            "te" -> "రెండవ అడుగు: మీరు మెనూని కెమెరాతో చూడాలనుకుంటున్నారా, లేదా ఆహార ప్రశ్నలు అడగాలనుకుంటున్నారా?"
+            "hi" -> "दूसरा चरण: क्या आप मुद्रित मेनू को कैमरे से स्कैन करना चाहते हैं, या किसी व्यंजन के बारे में पूछना चाहते हैं?"
+            "ta" -> "இரண்டாம் படி: நீங்கள் மெனுவை கேமரா மூலம் ஸ்கேன் செய்ய விரும்புகிறீர்களா, அல்லது உணவைப் பற்றி கேட்க விரும்புகிறீர்களா?"
+            "kn" -> "ಎರಡನೇ ಹಂತ: ನೀವು ಮೆನುವನ್ನು ಕ್ಯಾಮೆರಾದಿಂದ ಸ್ಕ್ಯಾನ್ ಮಾಡಲು ಬಯಸುತ್ತೀರಾ, ಅಥವಾ ಆಹಾರದ ಬಗ್ಗೆ ಕೇಳಲು ಬಯಸುತ್ತೀರಾ?"
+            "ml" -> "രണ്ടാം പടി: നിങ്ങൾ ക്യാമറ ഉപയോഗിച്ച് മെനു സ്കാൻ ചെയ്യാൻ ആഗ്രഹിക്കുന്നുണ്ടോ, അതോ ഭക്ഷണത്തെക്കുറിച്ച് ചോദിക്കാൻ ആഗ്രഹിക്കുന്നുണ്ടോ?"
+            else -> "Step 2: Would you like to scan the menu with your camera, or ask any question about the food?"
+        }
+        3 -> when (selectedLanguage.lowercase()) {
+            "te" -> "మూడవ అడుగు: మీకు ఏదైనా ఆహార నియమాలు ఉన్నాయా? స్వచ్ఛమైన శాకాహారం, జైన భోజనం, లేదా తక్కువ కారం?"
+            "hi" -> "तीसरा चरण: क्या आपकी कोई खान-पान प्राथमिकता है? शुद्ध शाकाहारी, जैन भोजन, या हल्का सुपाच्य कम तीखा भोजन?"
+            "ta" -> "மூன்றாம் படி: உங்களுக்கு ஏதேனும் உணவு கட்டுப்பாடுகள் உள்ளதா? தூய சைவ உணவு, சமண உணவு, அல்லது குறைந்த காரம்?"
+            "kn" -> "ಮೂರನೇ ಹಂತ: ನಿಮಗೆ ಯಾವುದೇ ಆಹಾರದ ನಿರ್ಬಂಧಗಳಿವೆಯೇ? ಶುದ್ಧ ಸಸ್ಯಾಹಾರಿ, ಜೈನ ಸ್ನೇಹಿ, ಅಥವಾ ಕಡಿಮೆ ಖಾರ?"
+            "ml" -> "മൂന്നാം പടി: നിങ്ങൾക്ക് എന്തെങ്കിലും ഭക്ഷണ നിയന്ത്രണങ്ങൾ ഉണ്ടോ? ശുദ്ധ സസ്യാഹാരം, ജൈന ഭക്ഷണം, അല്ലെങ്കിൽ കുറഞ്ഞ എരിവ്?"
+            else -> "Step 3: Do you have any dietary restrictions? Pure vegetarian, Jain friendly, or mild and non-spicy?"
+        }
+        else -> when (selectedLanguage.lowercase()) {
+            "te" -> "నాల్గవ అడుగు: మీకు సహాయం చేయడానికి వెయిటర్‌ని పిలవమంటారా, లేదా మీ ఆర్డర్ తనిఖీ చేయమంటారా?"
+            "hi" -> "अंतिम चरण: क्या आपकी मेज़ पर वेटर की सहायता चाहिए, या थाली और बिल की समीक्षा करना चाहते हैं?"
+            "ta" -> "நான்காம் படி: உங்களுக்கு உதவ பணியாளரை அழைக்க வேண்டுமா, அல்லது உங்கள் ஆர்டரை சரிபார்க்க வேண்டுமா?"
+            "kn" -> "ನಾಲ್ಕನೇ ಹಂತ: ನಿಮಗೆ ಸಹಾಯ ಮಾಡಲು ಮಾಣಿ ಕರೆಯಬೇಕೇ, ಅಥವಾ ನಿಮ್ಮ ಆದೇಶವನ್ನು ಪರಿಶೀಲಿಸಬೇಕೇ?"
+            "ml" -> "നാലാം പടി: നിങ്ങളെ സഹായിക്കാൻ വെയിറ്ററെ വിളിക്കണോ, അതോ നിങ്ങളുടെ ഓർഡർ പരിശോധിക്കണോ?"
+            else -> "Step 4: Would you like to call a waiter to your table, or review your current order and bill?"
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x99000000))
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
+                    .clip(RoundedCornerShape(24.dp)),
+                color = NeoBackground,
+                shape = RoundedCornerShape(24.dp),
+                shadowElevation = 12.dp
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp)
                 ) {
-                    if (isSelected) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = NeoOnPrimary,
-                            modifier = Modifier.size(15.dp)
+                    // Header Row: Concierge Badge + Title + Close Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .neomorphicSurface(
+                                        shape = CircleShape,
+                                        surfaceColor = NeoPrimaryContainer,
+                                        borderColor = NeoPrimary,
+                                        elevation = 3.dp,
+                                        cornerRadius = 23.dp
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Elderly,
+                                    contentDescription = null,
+                                    tint = NeoPrimary,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            Column {
+                                Text(
+                                    text = "Step-by-Step Senior Help",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = NeoTextPrimary
+                                )
+                                Text(
+                                    text = "वरिष्ठ सहायक • అడుగుల వారీ సహాయం",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = NeoTextSecondary
+                                )
+                            }
+                        }
+
+                        // Close Button
+                        NeomorphicIconButton(
+                            icon = Icons.Default.Close,
+                            onClick = onClose,
+                            contentDescription = "Close senior help dialog",
+                            size = 40.dp
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Text(
-                        text = nativeName,
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) NeoOnPrimary else NeoTextSecondary,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        softWrap = false
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Step Indicator Row: Step X of 4
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Step $currentStep of $totalSteps",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoPrimary
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (step in 1..totalSteps) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = if (step == currentStep) 24.dp else 12.dp, height = 8.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (step == currentStep) NeoPrimary else NeoSurfacePressed)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Scrollable Step Content
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(scrollState)
+                    ) {
+                        when (currentStep) {
+                            1 -> {
+                                // STEP 1: LANGUAGE SELECTION
+                                Text(
+                                    text = "1. Which language do you prefer?",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary
+                                )
+                                Text(
+                                    text = "अपनी पसंदीदा भाषा चुनें • మీ భాషను ఎంచుకోండి",
+                                    fontSize = 14.sp,
+                                    color = NeoTextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                                )
+
+                                val langOptions = listOf(
+                                    Triple("te", "తెలుగు (Telugu)", "తెలుగులో సులభంగా మాట్లాడండి"),
+                                    Triple("hi", "हिन्दी (Hindi)", "हिन्दी में बात करें और सुनें"),
+                                    Triple("ta", "தமிழ் (Tamil)", "தமிழில் எளிதாகப் பேசுங்கள்"),
+                                    Triple("kn", "ಕನ್ನಡ (Kannada)", "ಕನ್ನಡದಲ್ಲಿ ಸುಲಭವಾಗಿ ಮಾತನಾಡಿ"),
+                                    Triple("ml", "മലയാളം (Malayalam)", "മലയാളത്തിൽ സംസാരിക്കുക"),
+                                    Triple("en", "English", "Speak and listen in English")
+                                )
+
+                                langOptions.forEach { (code, title, desc) ->
+                                    val isSelected = selectedLanguage.equals(code, ignoreCase = true)
+                                    NeomorphicCard(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp),
+                                        onClick = {
+                                            onSelectLanguage?.invoke(code)
+                                            effectiveSpeak?.invoke("Language set to $title")
+                                        },
+                                        containerColor = if (isSelected) NeoPrimaryContainer else NeoSurface,
+                                        borderColor = if (isSelected) NeoPrimary else NeoBorder
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = title,
+                                                    fontSize = 17.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) NeoPrimary else NeoTextPrimary
+                                                )
+                                                Text(
+                                                    text = desc,
+                                                    fontSize = 13.sp,
+                                                    color = NeoTextSecondary
+                                                )
+                                            }
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "Selected",
+                                                    tint = NeoPrimary,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            2 -> {
+                                // STEP 2: MENU ASSISTANCE
+                                Text(
+                                    text = "2. How can we help you explore food?",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary
+                                )
+                                Text(
+                                    text = "भोजन चुनने में मदद लें • ఆహారం ఎంచుకోవడంలో సహాయం",
+                                    fontSize = 14.sp,
+                                    color = NeoTextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                                )
+
+                                NeomorphicCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    onClick = {
+                                        onClose()
+                                        onNavigateToMenu?.invoke()
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CameraAlt,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Scan Printed Menu with Camera",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Point camera at table menu for spoken reading",
+                                                fontSize = 13.sp,
+                                                color = NeoTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                NeomorphicCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    onClick = {
+                                        onClose()
+                                        onNavigateToMenu?.invoke()
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.RestaurantMenu,
+                                            contentDescription = null,
+                                            tint = VegGreen,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Browse Full Menu by Section",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Starters, Main Course, Breads, and Desserts",
+                                                fontSize = 13.sp,
+                                                color = NeoTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                NeomorphicCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    onClick = {
+                                        effectiveSpeak?.invoke("You can tap the big microphone button on the home screen anytime and ask: What mild food do you have today?")
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Hearing,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Ask Any Food Question Aloud",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Tap to hear sample questions to ask by voice",
+                                                fontSize = 13.sp,
+                                                color = NeoTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            3 -> {
+                                // STEP 3: DIETARY PREFERENCES
+                                Text(
+                                    text = "3. Dietary Preferences & Gentle Food",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary
+                                )
+                                Text(
+                                    text = "परहेज व सुपाच्य भोजन • మీ ఆహార ప్రాధాన్యతలు",
+                                    fontSize = 14.sp,
+                                    color = NeoTextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                                )
+
+                                val diets = listOf(
+                                    Pair("Pure Vegetarian (शाकाहारी)", "100% vegetarian preparations, green badge items"),
+                                    Pair("Jain Food (जैन भोजन)", "Prepared strictly without onion, garlic, or root vegetables"),
+                                    Pair("Mild & Gentle (कम तीखा / सादा)", "Low oil, non-spicy, soothing dishes suited for digestion"),
+                                    Pair("No Restrictions (सामान्य)", "All regular restaurant dishes and chef specials")
+                                )
+
+                                diets.forEach { (name, note) ->
+                                    NeomorphicCard(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 5.dp),
+                                        onClick = {
+                                            effectiveSpeak?.invoke("$name preference noted. Svara will highlight matching dishes.")
+                                        }
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = name,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = note,
+                                                fontSize = 12.sp,
+                                                color = NeoTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            4 -> {
+                                // STEP 4: WAITER & ORDER REVIEW
+                                Text(
+                                    text = "4. Assistance & Order Review",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary
+                                )
+                                Text(
+                                    text = "वेटर सहायता व थाली • సహాయం మరియు ఆర్డర్",
+                                    fontSize = 14.sp,
+                                    color = NeoTextSecondary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                                )
+
+                                NeomorphicCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    onClick = {
+                                        onClose()
+                                        onNavigateToWaiter?.invoke()
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonOutline,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Call Waiter to Table (वेटर को बुलाएं)",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Quick phrase board to speak to dining staff",
+                                                fontSize = 13.sp,
+                                                color = NeoTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+
+                                NeomorphicCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    onClick = {
+                                        onClose()
+                                        onNavigateToCart?.invoke()
+                                    }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ShoppingBag,
+                                            contentDescription = null,
+                                            tint = VegGreen,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Review Cart & Bill (थाली व बिल)",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Check added items, quantities, and totals",
+                                                fontSize = 13.sp,
+                                                color = NeoTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Persistent Big "Repeat Aloud" Button (Core Senior requirement: Persistent Repeat)
+                    NeomorphicButton(
+                        text = "Repeat Step Aloud (निर्देश पुनः सुनें)",
+                        onClick = {
+                            effectiveSpeak?.invoke(stepNarration)
+                        },
+                        isPrimary = false,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.VolumeUp,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp)
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Step Navigation Buttons (Previous / Next / Done)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (currentStep > 1) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                NeomorphicButton(
+                                    text = "Previous (पिछला)",
+                                    onClick = { currentStep-- },
+                                    isPrimary = false,
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                )
+                            }
+                        }
+
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (currentStep < totalSteps) {
+                                NeomorphicButton(
+                                    text = "Next (अगला)",
+                                    onClick = { currentStep++ },
+                                    isPrimary = true,
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                )
+                            } else {
+                                NeomorphicButton(
+                                    text = "Finish (संपन्न)",
+                                    onClick = onClose,
+                                    isPrimary = true,
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+

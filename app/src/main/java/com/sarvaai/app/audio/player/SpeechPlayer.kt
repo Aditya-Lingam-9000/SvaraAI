@@ -98,6 +98,12 @@ class SpeechPlayer(private val context: Context) {
         exoPlayer.playbackParameters = PlaybackParameters(currentSpeed, 1.0f)
     }
 
+    fun setPlaybackSpeed(speed: Float) {
+        currentSpeed = speed
+        _playbackSpeed.value = speed
+        exoPlayer.playbackParameters = PlaybackParameters(speed)
+    }
+
     fun enqueueAudioFile(file: File, clearQueue: Boolean = false) {
         try {
             val mediaItem = MediaItem.fromUri(Uri.fromFile(file))

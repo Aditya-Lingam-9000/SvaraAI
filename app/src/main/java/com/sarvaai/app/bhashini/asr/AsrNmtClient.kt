@@ -28,34 +28,46 @@ class AsrNmtClient(
         const val DEFAULT_ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNmFjYTM2MmE2YWQ0MDM3OTU1Y2Q4YmVhIiwicm9sZSI6Im1lZ2F0aG9uX3N0dWRlbnQiLCJleHAiOjE3OTE4NjU4MDB9.MvE-w5j4jErD7lHlYpd8ibEe8F4Dj4HJHNLtGtkXR2k"
 
         // Dedicated AnuvaadHub ASR Model Endpoints
-        private val ASR_ENDPOINTS = mapOf(
-            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603533", // AI4Bharat-ASR-Hindi
+        val ASR_ENDPOINTS = mapOf(
             "te" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e60353b", // AI4Bharat-ASR-Telugu
+            "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603533", // AI4Bharat-ASR-Hindi
+            "kn" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603534", // AI4Bharat-ASR-Kannada
+            "ml" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603535", // AI4Bharat-ASR-Malayalam
+            "ta" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e60353a", // AI4Bharat-ASR-Tamil
             "en" to "https://canvas.iiit.ac.in/sandboxbeprod/infer_asr/6979e11150f13fc15e603531"  // AI4Bharat-ASR-English
         )
 
         // Native -> English MT Endpoints (for unified LLM reasoning)
-        private val MT_TO_EN_ENDPOINTS = mapOf(
+        val MT_TO_EN_ENDPOINTS = mapOf(
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb923163869", // IIITH-Bhashaverse-Telugu-English
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316384a", // IIITH-Bhashaverse-Hindi-English
-            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb923163869"  // IIITH-Bhashaverse-Telugu-English
+            "kn" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316389d", // IIITH-Bhashaverse-Kannada-English
+            "ta" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/6872173a4f34535ffa89bafd", // IIITH-Bhashaverse-Tamil-English
+            "ml" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/687217344f34535ffa89b9d4"  // IIITH-Bhashaverse-Malayalam-English
         )
 
         // English -> Native Staff MT Endpoints (for restaurant staff/kitchen bridge)
-        private val MT_EN_TO_STAFF_ENDPOINTS = mapOf(
+        val MT_EN_TO_STAFF_ENDPOINTS = mapOf(
+            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316389a", // IIITH-Bhashaverse-English-Telugu
             "hi" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316383c", // IIITH-Bhashaverse-English-Hindi
-            "te" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb92316389a"  // IIITH-Bhashaverse-English-Telugu
+            "kn" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb923163823", // IIITH-Bhashaverse-English-Kannada
+            "ta" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb9231638be", // IIITH-Bhashaverse-English-Tamil
+            "ml" to "https://canvas.iiit.ac.in/sandboxbeprod/check_model_status_and_infer/67b86729b5cc0eb9231638b7"  // IIITH-Bhashaverse-English-Malayalam
         )
+
+        val SUPPORTED_LANGUAGE_CODES = setOf("te", "hi", "ta", "kn", "ml", "en")
     }
 
     suspend fun transcribeAndTranslate(
         wavBytes: ByteArray,
-        sourceLanguage: String
+        sourceLanguage: String,
+        targetStaffLanguage: String = "hi"
     ): Result<IngestionResult> = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
         val lang = sourceLanguage.lowercase()
 
         // 1. Resolve ASR Endpoint
-        val asrUrl = ASR_ENDPOINTS[lang] ?: ASR_ENDPOINTS["hi"]!!
+        val asrUrl = ASR_ENDPOINTS[lang] ?: ASR_ENDPOINTS["te"] ?: ASR_ENDPOINTS["hi"]!!
         val token = if (BuildConfig.BHASHINI_INFERENCE_KEY.isNotEmpty()) BuildConfig.BHASHINI_INFERENCE_KEY else DEFAULT_ACCESS_TOKEN
 
         Log.i(TAG, "Initiating AnuvaadHub ASR [$lang] -> $asrUrl (WAV bytes: ${wavBytes.size})")
@@ -145,8 +157,8 @@ class AsrNmtClient(
             )
         } else {
             // English mode: English goes directly to LLM dialog engine (0ms NMT latency).
-            // Concurrently generate staff translation (English -> Hindi) for waiter / kitchen assistive display
-            val staffMtUrl = MT_EN_TO_STAFF_ENDPOINTS["hi"]
+            // Concurrently generate staff translation (English -> staff language) for waiter / kitchen assistive display
+            val staffMtUrl = MT_EN_TO_STAFF_ENDPOINTS[targetStaffLanguage.lowercase()] ?: MT_EN_TO_STAFF_ENDPOINTS["hi"]
             if (staffMtUrl != null) {
                 try {
                     val mtPayload = json.encodeToString(AnuvaadHubMtRequest.serializer(), AnuvaadHubMtRequest(inputText = transcript))
@@ -163,7 +175,14 @@ class AsrNmtClient(
                         val translatedText = parsedMt.data?.outputText?.trim()
                         if (!translatedText.isNullOrEmpty()) {
                             staffTranslation = translatedText
-                            staffTargetLanguage = "Hindi"
+                            staffTargetLanguage = when (targetStaffLanguage.lowercase()) {
+                                "te" -> "Telugu"
+                                "hi" -> "Hindi"
+                                "ta" -> "Tamil"
+                                "kn" -> "Kannada"
+                                "ml" -> "Malayalam"
+                                else -> "English"
+                            }
                         }
                     }
                 } catch (e: Exception) {

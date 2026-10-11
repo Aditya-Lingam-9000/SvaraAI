@@ -20,25 +20,41 @@ data class CollectedSignals(
     val touchlessElapsedSec: Int = 0
 )
 
-class SignalCollector(private val context: Context) {
-    private val accessibilityManager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-    private val captioningManager = context.getSystemService(Context.CAPTIONING_SERVICE) as? CaptioningManager
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+class SignalCollector(private val context: Context? = null) {
+    private val accessibilityManager = context?.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+    private val captioningManager = context?.getSystemService(Context.CAPTIONING_SERVICE) as? CaptioningManager
+    private val audioManager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     private val _signals = MutableStateFlow(CollectedSignals())
     val signals: StateFlow<CollectedSignals> = _signals.asStateFlow()
 
-    fun pollSystemSignals(configuration: Configuration) {
+    private var dwellPauseCount = 0
+    private var totalDwellPauseMs = 0L
+
+    fun pollSystemSignals(
+        configuration: Configuration? = null,
+        repeatTapCount: Int? = null,
+        averagePauseDurationMs: Long? = null
+    ) {
         val touchExploration = accessibilityManager?.isTouchExplorationEnabled == true
         val captions = captioningManager?.isEnabled == true
         val muted = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
-        val fontScale = configuration.fontScale
+        val fontScale = configuration?.fontScale ?: _signals.value.fontScale
+
+        val newRepeatTaps = repeatTapCount ?: _signals.value.repeatTapCount
+        val newAvgPause = averagePauseDurationMs ?: _signals.value.averagePauseDurationMs
+        if (averagePauseDurationMs != null) {
+            dwellPauseCount = if (averagePauseDurationMs > 0) 1 else 0
+            totalDwellPauseMs = averagePauseDurationMs
+        }
 
         _signals.value = _signals.value.copy(
             isTouchExplorationOn = touchExploration,
             isSystemCaptioningOn = captions,
             isMediaMuted = muted,
-            fontScale = fontScale
+            fontScale = fontScale,
+            repeatTapCount = newRepeatTaps,
+            averagePauseDurationMs = newAvgPause
         )
     }
 
@@ -60,15 +76,36 @@ class SignalCollector(private val context: Context) {
         _signals.value = _signals.value.copy(repeatTapCount = 0)
     }
 
+    fun recordDwellHesitation(pauseMs: Long) {
+        if (dwellPauseCount == 0 && _signals.value.averagePauseDurationMs > 0L) {
+            dwellPauseCount = 1
+            totalDwellPauseMs = _signals.value.averagePauseDurationMs
+        }
+        dwellPauseCount++
+        totalDwellPauseMs += pauseMs
+        val avg = totalDwellPauseMs / dwellPauseCount
+        _signals.value = _signals.value.copy(averagePauseDurationMs = avg)
+    }
+
+    fun resetDwellHesitation() {
+        dwellPauseCount = 0
+        totalDwellPauseMs = 0L
+        _signals.value = _signals.value.copy(averagePauseDurationMs = 0L)
+    }
+
     fun updateTouchlessElapsed(seconds: Int) {
         _signals.value = _signals.value.copy(touchlessElapsedSec = seconds)
     }
 
     fun injectSimulatedSignals(simulated: CollectedSignals) {
         _signals.value = simulated
+        dwellPauseCount = if (simulated.averagePauseDurationMs > 0L) 1 else 0
+        totalDwellPauseMs = simulated.averagePauseDurationMs
     }
 
     fun resetAll() {
+        dwellPauseCount = 0
+        totalDwellPauseMs = 0L
         _signals.value = CollectedSignals()
     }
 }

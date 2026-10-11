@@ -207,6 +207,10 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun startWakeWordListening() {
+        if (!IS_WAKE_WORD_ENABLED) {
+            Log.d(TAG, "startWakeWordListening skipped: IS_WAKE_WORD_ENABLED is false")
+            return
+        }
         if (isListeningActive || isAppInForeground) {
             Log.d(TAG, "startWakeWordListening skipped: isListeningActive=$isListeningActive, isAppInForeground=$isAppInForeground")
             return
@@ -387,6 +391,10 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun triggerWakeWordDetected() {
+        if (!IS_WAKE_WORD_ENABLED) {
+            Log.d(TAG, "triggerWakeWordDetected skipped: IS_WAKE_WORD_ENABLED is false")
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         if (now - lastWakeTriggerTime < 8000L) {
             Log.w(TAG, "Wake word trigger ignored: 8-second cooldown active (${now - lastWakeTriggerTime}ms < 8000ms)")
@@ -500,6 +508,8 @@ class SvaraWakeWordService : Service() {
 
     companion object {
         private const val TAG = "SvaraWakeWordService"
+
+        const val IS_WAKE_WORD_ENABLED = false // Temporarily disabled per user request
 
         const val CHANNEL_ID = "svara_wakeword_channel"
         const val NOTIFICATION_ID = 2001

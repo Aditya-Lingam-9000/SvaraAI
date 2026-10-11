@@ -273,6 +273,14 @@ fun CompareDishesScreen(
     // Instant feedback for added items
     var recentlyAddedIds by remember { mutableStateOf(setOf<String>()) }
 
+    // Bottom popup card visibility (auto-dismisses after 2 seconds upon opening compare section)
+    var isBottomPopupVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        delay(2000L)
+        isBottomPopupVisible = false
+    }
+
     // Safe Back navigation
     BackHandler {
         onStopNarration()
@@ -323,7 +331,7 @@ fun CompareDishesScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = if (totalCartCount > 0) 76.dp else 0.dp)
+                .padding(bottom = if (isBottomPopupVisible) 76.dp else 0.dp)
         ) {
             // ================================================================
             // HEADER BAR
@@ -664,15 +672,20 @@ fun CompareDishesScreen(
         }
 
         // ================================================================
-        // STICKY BOTTOM CART FOOTER
+        // BOTTOM POPUP CARD (Cart Overview or Comparison Tip Popup)
+        // Automatically visible for only 2 seconds after opening compare section
         // ================================================================
-        if (totalCartCount > 0) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+        AnimatedVisibility(
+            visible = isBottomPopupVisible,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            if (totalCartCount > 0) {
+                // Cart Overview Popup Card
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -740,6 +753,51 @@ fun CompareDishesScreen(
                             contentDescription = null,
                             tint = NeoPrimary,
                             modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            } else {
+                // Comparison Tip Popup Card
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(16.dp),
+                            surfaceColor = NeoSurface,
+                            borderColor = NeoPrimary.copy(alpha = 0.5f),
+                            borderWidth = 1.dp,
+                            elevation = 6.dp,
+                            cornerRadius = 16.dp
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(NeoPrimaryContainer)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = NeoPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Comparison Tip",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary
+                        )
+                        Text(
+                            text = "Compare dishes side-by-side or switch to catalog list view",
+                            fontSize = 11.sp,
+                            color = NeoTextSecondary
                         )
                     }
                 }

@@ -14,9 +14,9 @@ object CapabilityMatrix {
 
     val SUPPORTED_LANGUAGES = listOf(
         LanguageCapability(
-            code = "en",
-            nameEnglish = "English",
-            nameNative = "English",
+            code = "te",
+            nameEnglish = "Telugu",
+            nameNative = "తెలుగు",
             supportsAsr = true,
             supportsNmt = true,
             supportsTts = true,
@@ -32,9 +32,36 @@ object CapabilityMatrix {
             supportsTransliteration = true
         ),
         LanguageCapability(
-            code = "te",
-            nameEnglish = "Telugu",
-            nameNative = "తెలుగు",
+            code = "ta",
+            nameEnglish = "Tamil",
+            nameNative = "தமிழ்",
+            supportsAsr = true,
+            supportsNmt = true,
+            supportsTts = true,
+            supportsTransliteration = true
+        ),
+        LanguageCapability(
+            code = "kn",
+            nameEnglish = "Kannada",
+            nameNative = "ಕನ್ನಡ",
+            supportsAsr = true,
+            supportsNmt = true,
+            supportsTts = true,
+            supportsTransliteration = true
+        ),
+        LanguageCapability(
+            code = "ml",
+            nameEnglish = "Malayalam",
+            nameNative = "മലയാളം",
+            supportsAsr = true,
+            supportsNmt = true,
+            supportsTts = true,
+            supportsTransliteration = true
+        ),
+        LanguageCapability(
+            code = "en",
+            nameEnglish = "English",
+            nameNative = "English",
             supportsAsr = true,
             supportsNmt = true,
             supportsTts = true,

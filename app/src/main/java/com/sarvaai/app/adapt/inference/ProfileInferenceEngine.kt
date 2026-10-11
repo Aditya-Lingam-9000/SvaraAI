@@ -55,8 +55,10 @@ class ProfileInferenceEngine {
         if (signals.failedAsrConsecutiveCount >= 3) speechScore += 40
 
         ageingScore = 0
-        if (signals.fontScale >= 1.3f) ageingScore += 50
+        if (signals.fontScale >= 1.2f) ageingScore += 40
+        if (signals.fontScale >= 1.35f) ageingScore += 30
         if (signals.repeatTapCount >= 2) ageingScore += 40
+        if (signals.averagePauseDurationMs >= 3000L) ageingScore += 30
 
         // 2. Apply Hysteresis
         val current = _flags.value
@@ -68,14 +70,18 @@ class ProfileInferenceEngine {
         val newStepByStep = applyHysteresis(ageingScore, current.stepByStep)
 
         // Generate transparency message if new adaptation activated
+        val ageingTriggered = (!current.largeText && newLargeText) ||
+                (!current.slowTts && newSlowTts) ||
+                (!current.stepByStep && newStepByStep)
+
         if (!current.voiceFirst && newVoiceFirst) {
             _lastAnnouncedReason.value = "Screen reader detected. Voice-first mode activated."
         } else if (!current.captionsOn && newCaptionsOn) {
             _lastAnnouncedReason.value = "Audio mute or system captions detected. Live caption bar activated."
         } else if (!current.phraseBoard && newPhraseBoard) {
             _lastAnnouncedReason.value = "Speech recognition difficulty detected. Quick phrase board suggested."
-        } else if (!current.largeText && newLargeText) {
-            _lastAnnouncedReason.value = "Large font scale detected. High-contrast large text and slower audio activated."
+        } else if (ageingTriggered) {
+            _lastAnnouncedReason.value = "Ageing condition inferred: Large text, unhurried 0.8x voice, and Step-by-Step guided help activated."
         }
 
         _flags.value = ActiveFeatureFlags(
@@ -93,6 +99,28 @@ class ProfileInferenceEngine {
             score >= LOWER_THRESHOLD
         } else {
             score >= UPPER_THRESHOLD
+        }
+    }
+
+    fun toggleManualAgeingMode(enable: Boolean = !(_flags.value.slowTts || _flags.value.largeText || _flags.value.stepByStep)) {
+        if (enable) {
+            _isUserOverridden.value = true
+            ageingScore = 100
+            _flags.value = _flags.value.copy(
+                slowTts = true,
+                largeText = true,
+                stepByStep = true
+            )
+            _lastAnnouncedReason.value = "Ageing condition inferred: Large text, unhurried 0.8x voice, and Step-by-Step guided help activated."
+        } else {
+            _isUserOverridden.value = false
+            ageingScore = 0
+            _flags.value = _flags.value.copy(
+                slowTts = false,
+                largeText = false,
+                stepByStep = false
+            )
+            _lastAnnouncedReason.value = null
         }
     }
 
