@@ -1,10 +1,9 @@
 package com.sarvaai.app.ui.screens.browser
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -42,13 +43,23 @@ import com.sarvaai.app.audio.earcons.EarconEngine
 import com.sarvaai.app.audio.earcons.EarconType
 import com.sarvaai.app.audio.haptics.HapticFeedbackEngine
 import com.sarvaai.app.audio.haptics.HapticPattern
+import com.sarvaai.app.audio.recorder.AudioRecorder
+import com.sarvaai.app.bhashini.asr.AsrNmtClient
+import com.sarvaai.app.core.result.Result
 import com.sarvaai.app.data.entities.MenuItemEntity
 import com.sarvaai.app.data.entities.MenuSectionEntity
+import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.menu.narrator.LayoutNarrator
 import com.sarvaai.app.menu.navigation.NavigationAction
 import com.sarvaai.app.menu.navigation.VoiceMenuNavigator
+import com.sarvaai.app.service.wakeword.WakeWordDetector
+import com.sarvaai.app.ui.components.LiveCaptionBar
 import com.sarvaai.app.ui.components.neomorphicSurface
 import com.sarvaai.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 @Composable
 fun MenuBrowserScreen(
@@ -58,6 +69,10 @@ fun MenuBrowserScreen(
     selectedLanguage: String,
     hapticEngine: HapticFeedbackEngine,
     earconEngine: EarconEngine,
+    audioRecorder: AudioRecorder? = null,
+    asrNmtClient: AsrNmtClient? = null,
+    groqClient: GroqClient? = null,
+    autoStartListeningTrigger: Int = 0,
     isAudioPlaying: Boolean = false,
     onSpeakNarration: (String) -> Unit,
     onStopNarration: () -> Unit = {},
@@ -66,27 +81,234 @@ fun MenuBrowserScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val isRecording = audioRecorder?.isRecording?.collectAsState()?.value ?: false
+
     var selectedSectionIndex by remember { mutableStateOf(0) }
     var filterVegOnly by remember { mutableStateOf(false) }
     var filterJainOnly by remember { mutableStateOf(false) }
+    var isAiProcessing by remember { mutableStateOf(false) }
+    var liveCaptionText by remember { mutableStateOf<String?>(null) }
+    var highlightedItemId by remember { mutableStateOf<String?>(null) }
 
-    // Safe hardware/gesture back handling
-    BackHandler {
-        onStopNarration()
-        onClose()
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            onStopNarration()
-        }
-    }
+    // Pulsing animation for active voice mic listening
+    val infiniteTransition = rememberInfiniteTransition(label = "mic_pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = if (isRecording) 1.10f else 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mic_scale"
+    )
 
     val navigator = remember(sections, itemsBySection) {
         VoiceMenuNavigator(sections, itemsBySection)
     }
 
     val activeItem by navigator.activeItem.collectAsState()
+
+    // Process captured voice for dietary questions and orders
+    fun processCapturedSpeech(wavBytes: ByteArray) {
+        if (wavBytes.isEmpty()) return
+        isAiProcessing = true
+        scope.launch(Dispatchers.IO) {
+            val asrRes = asrNmtClient?.transcribeAndTranslate(wavBytes, selectedLanguage)
+            val recognizedText = if (asrRes is Result.Success) asrRes.data.originalTranscript.trim() else ""
+
+            if (recognizedText.isNotBlank()) {
+                if (WakeWordDetector.isCloseCommand(recognizedText)) {
+                    withContext(Dispatchers.Main) {
+                        isAiProcessing = false
+                        onStopNarration()
+                        earconEngine.play(EarconType.LISTEN_STOP)
+                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                        val goodbyeMessage = WakeWordDetector.getGoodbyeMessage(selectedLanguage)
+                        onSpeakNarration(goodbyeMessage)
+                        val closeIntent = Intent(WakeWordDetector.ACTION_CLOSE_APP).apply {
+                            setPackage(context.packageName)
+                        }
+                        context.sendBroadcast(closeIntent)
+                        onClose()
+                    }
+                    return@launch
+                }
+
+                // Build full menu context with dietary tags, prices, and descriptions
+                val allItems = itemsBySection.values.flatten()
+                val menuContext = allItems.joinToString("; ") { item ->
+                    "${item.nameEnglish} (Price: ₹${item.priceRupees}, Veg: ${item.isVegetarian}, Jain: ${item.isJain}${if (!item.description.isNullOrBlank()) ", Desc: ${item.description}" else ""})"
+                }
+
+                // Dietary reasoning via Groq QA assistant with fallback to local reasoner
+                val aiRes = groqClient?.processMenuDietaryQa(
+                    userQuery = recognizedText,
+                    userLanguage = selectedLanguage,
+                    restaurantName = restaurantName,
+                    menuItems = allItems,
+                    sections = sections
+                )
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    if (aiRes is Result.Success) {
+                        val resp = aiRes.data
+                        liveCaptionText = resp.caption
+                        onSpeakNarration(resp.spoken)
+
+                        for (action in resp.actions) {
+                            when (action.actionType) {
+                                "FILTER_VEG" -> {
+                                    filterVegOnly = true
+                                    filterJainOnly = false
+                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                }
+                                "FILTER_JAIN" -> {
+                                    filterJainOnly = true
+                                    filterVegOnly = true
+                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                }
+                                "HIGHLIGHT_ITEM" -> {
+                                    val target = action.payload.orEmpty().trim()
+                                    val matched = allItems.firstOrNull { m ->
+                                        m.nameEnglish.contains(target, ignoreCase = true) ||
+                                        target.contains(m.nameEnglish, ignoreCase = true) ||
+                                        m.itemId.equals(target, ignoreCase = true) ||
+                                        (m.nameTelugu != null && (m.nameTelugu.contains(target, ignoreCase = true) || target.contains(m.nameTelugu, ignoreCase = true))) ||
+                                        (m.nameHindi != null && (m.nameHindi.contains(target, ignoreCase = true) || target.contains(m.nameHindi, ignoreCase = true)))
+                                    }
+                                    if (matched != null) {
+                                        highlightedItemId = matched.itemId
+                                        val secIdx = sections.indexOfFirst { it.sectionId == matched.sectionId }
+                                        if (secIdx >= 0) {
+                                            selectedSectionIndex = secIdx
+                                        }
+                                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                    }
+                                }
+                                "ADD_TO_CART" -> {
+                                    val payload = action.payload.orEmpty()
+                                    val parts = payload.split(":")
+                                    val itemName = parts.getOrNull(0)?.trim()?.takeIf { it.isNotBlank() } ?: recognizedText
+                                    val matchedItem = allItems.firstOrNull { m ->
+                                        m.nameEnglish.contains(itemName, ignoreCase = true) ||
+                                        itemName.contains(m.nameEnglish, ignoreCase = true) ||
+                                        (m.nameTelugu != null && (m.nameTelugu.contains(itemName, ignoreCase = true) || itemName.contains(m.nameTelugu, ignoreCase = true))) ||
+                                        (m.nameHindi != null && (m.nameHindi.contains(itemName, ignoreCase = true) || itemName.contains(m.nameHindi, ignoreCase = true)))
+                                    }
+                                    if (matchedItem != null) {
+                                        onAddItemToCart(matchedItem)
+                                    } else {
+                                        val custom = MenuItemEntity(
+                                            itemId = "item_${UUID.randomUUID().toString().take(6)}",
+                                            sectionId = sections.firstOrNull()?.sectionId ?: "sec_1",
+                                            nameEnglish = itemName,
+                                            pricePaise = 12000L,
+                                            isVegetarian = true
+                                        )
+                                        onAddItemToCart(custom)
+                                    }
+                                    earconEngine.play(EarconType.ORDER_CONFIRMED)
+                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                }
+                                "NAVIGATE_SECTION" -> {
+                                    val payload = action.payload.orEmpty()
+                                    val matchedSectionIndex = sections.indexOfFirst { sec ->
+                                        sec.titleEnglish.contains(payload, ignoreCase = true) ||
+                                        payload.contains(sec.titleEnglish, ignoreCase = true) ||
+                                        (sec.titleNative != null && payload.contains(sec.titleNative, ignoreCase = true))
+                                    }
+                                    if (matchedSectionIndex >= 0) {
+                                        selectedSectionIndex = matchedSectionIndex
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        val spokenFallback = when (selectedLanguage) {
+                            "te" -> "క్షమించండి, మీ ప్రశ్నను అర్థం చేసుకోలేకపోయాను. దయచేసి మళ్ళీ అడగండి."
+                            "hi" -> "क्षमा करें, मैं समझ नहीं सका। कृपया पुनः प्रयास करें।"
+                            else -> "I could not process your query. Please ask again."
+                        }
+                        liveCaptionText = spokenFallback
+                        onSpeakNarration(spokenFallback)
+                        hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                        earconEngine.play(EarconType.ERROR_ALERT)
+                    }
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                    earconEngine.play(EarconType.ERROR_ALERT)
+                }
+            }
+        }
+    }
+
+    fun startListening() {
+        if (audioRecorder == null || asrNmtClient == null || groqClient == null) return
+        onStopNarration()
+        hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
+        earconEngine.play(EarconType.LISTEN_START)
+        isAiProcessing = false
+        liveCaptionText = when (selectedLanguage) {
+            "te" -> "మీ ఆహారపు ప్రశ్న లేదా ఆర్డర్ అడగండి..."
+            "hi" -> "अपने आहार संबंधी प्रश्न या ऑर्डर पूछें..."
+            else -> "Listening for dietary questions or orders..."
+        }
+
+        audioRecorder.startRecording(
+            onUtteranceComplete = { wavBytes ->
+                hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                earconEngine.play(EarconType.LISTEN_STOP)
+                processCapturedSpeech(wavBytes)
+            },
+            onError = {
+                isAiProcessing = false
+                hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                earconEngine.play(EarconType.ERROR_ALERT)
+            }
+        )
+    }
+
+    fun stopListeningManually() {
+        if (isRecording) {
+            hapticEngine.trigger(HapticPattern.CLICK)
+            earconEngine.play(EarconType.LISTEN_STOP)
+            audioRecorder?.stopRecording()
+        }
+    }
+
+    // Auto-Start Listening Trigger when awakened by 'Hey Svara' or Wake Word
+    LaunchedEffect(autoStartListeningTrigger) {
+        if (autoStartListeningTrigger > 0) {
+            earconEngine.play(EarconType.LISTEN_START)
+            hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
+            if (audioRecorder != null && !audioRecorder.isRecording.value) {
+                startListening()
+            }
+        }
+    }
+
+    // Safe hardware/gesture back handling
+    BackHandler {
+        onStopNarration()
+        if (audioRecorder?.isRecording?.value == true) {
+            audioRecorder.stopRecording()
+        }
+        onClose()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onStopNarration()
+            if (audioRecorder?.isRecording?.value == true) {
+                audioRecorder.stopRecording()
+            }
+        }
+    }
 
     val currentSection = sections.getOrNull(selectedSectionIndex)
     val rawSectionItems = currentSection?.let { itemsBySection[it.sectionId] } ?: emptyList()
@@ -118,7 +340,7 @@ fun MenuBrowserScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp, bottom = 8.dp)
+                    .padding(top = 4.dp, bottom = 6.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -198,12 +420,20 @@ fun MenuBrowserScreen(
                 }
             }
 
-            // Overview Narration & Cart Buttons (Standardized 46.dp compact Neomorphic buttons)
+            // Live Caption Bar for AI Dietary QA & Voice Queries
+            LiveCaptionBar(
+                fullCaption = liveCaptionText ?: "",
+                isVisible = !liveCaptionText.isNullOrBlank(),
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+
+            // Primary Action Row: Hear Menu Layout + Neomorphic Voice Assistant Mic + Voice Cart
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Hear Menu Layout (Primary)
+                // Hear Menu Layout Button
                 val layoutInteraction = remember { MutableInteractionSource() }
                 val isLayoutPressed by layoutInteraction.collectIsPressedAsState()
                 val layoutScale by animateFloatAsState(
@@ -250,19 +480,74 @@ fun MenuBrowserScreen(
                             imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                             contentDescription = null,
                             tint = NeoOnPrimary,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Hear Menu Layout",
-                            fontSize = 13.sp,
+                            text = "Hear Layout",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = NeoOnPrimary
                         )
                     }
                 }
 
-                // Voice Cart (Secondary)
+                // Prominent Neomorphic Voice Assistant Mic Button with Recording Animations
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .scale(pulseScale)
+                        .clip(CircleShape)
+                        .background(
+                            if (isRecording) NonVegRed
+                            else if (isAiProcessing) NeoSurfacePressed
+                            else NeoPrimaryContainer
+                        )
+                        .border(
+                            BorderStroke(
+                                1.5.dp,
+                                if (isRecording) NonVegRed
+                                else if (isAiProcessing) NeoBorder
+                                else NeoPrimary.copy(alpha = 0.5f)
+                            ),
+                            CircleShape
+                        )
+                        .shadow(
+                            elevation = if (isRecording) 6.dp else 2.dp,
+                            shape = CircleShape,
+                            spotColor = if (isRecording) NonVegRed.copy(alpha = 0.6f) else NeoDarkShadow,
+                            ambientColor = NeoDarkShadow
+                        )
+                        .clickable {
+                            if (isRecording) {
+                                stopListeningManually()
+                            } else {
+                                startListening()
+                            }
+                        }
+                        .semantics {
+                            contentDescription = if (isRecording) "Stop voice assistant" else "Ask Dietary AI Assistant"
+                            role = Role.Button
+                        }
+                ) {
+                    if (isAiProcessing) {
+                        CircularProgressIndicator(
+                            color = NeoPrimary,
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = if (isRecording) NeoOnPrimary else NeoPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                // Voice Cart Button
                 val cartInteraction = remember { MutableInteractionSource() }
                 val isCartPressed by cartInteraction.collectIsPressedAsState()
                 val cartScale by animateFloatAsState(
@@ -305,12 +590,12 @@ fun MenuBrowserScreen(
                             imageVector = Icons.Default.ShoppingCart,
                             contentDescription = null,
                             tint = NeoTextPrimary,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Voice Cart",
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = NeoTextPrimary
                         )
@@ -318,7 +603,7 @@ fun MenuBrowserScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Section Tabs (Neomorphic Pills)
             LazyRow(
@@ -438,7 +723,7 @@ fun MenuBrowserScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Dish Items List (Neomorphic Item Cards)
+            // Dish Items List (Neomorphic Item Cards with AI Highlighting)
             if (filteredItems.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -470,21 +755,24 @@ fun MenuBrowserScreen(
                         .fillMaxWidth()
                 ) {
                     items(filteredItems, key = { it.itemId }) { item ->
-                        val isHighlighted = activeItem?.itemId == item.itemId
+                        val isHighlighted = (activeItem?.itemId == item.itemId) || (highlightedItemId == item.itemId)
                         val priceWords = NumberVerbalizer.verbalizePrice(item.priceRupees, selectedLanguage)
 
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = NeoSurface),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isHighlighted) NeoPrimaryContainer.copy(alpha = 0.25f) else NeoSurface
+                            ),
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(
-                                width = if (isHighlighted) 2.dp else 1.5.dp,
+                                width = if (isHighlighted) 2.5.dp else 1.5.dp,
                                 color = if (isHighlighted) NeoPrimary else NeoBorder
                             ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = if (isHighlighted) 4.dp else 2.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .animateContentSize()
                                 .semantics(mergeDescendants = true) {
-                                    contentDescription = "${item.nameEnglish}, ${if (item.isVegetarian) "Vegetarian" else "Non-vegetarian"}, ${item.priceRupees} rupees. Double tap to hear description or add to cart."
+                                    contentDescription = "${item.nameEnglish}, ${if (item.isVegetarian) "Vegetarian" else "Non-vegetarian"}${if (item.isJain) ", Jain friendly" else ""}, ${item.priceRupees} rupees. Double tap to hear description or add to cart."
                                 }
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
@@ -494,12 +782,30 @@ fun MenuBrowserScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = item.nameEnglish,
-                                            fontSize = 17.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = NeoTextPrimary
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = item.nameEnglish,
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeoTextPrimary
+                                            )
+                                            if (isHighlighted) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(NeoPrimary)
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "MATCH",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = NeoOnPrimary
+                                                    )
+                                                }
+                                            }
+                                        }
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = "₹${item.priceRupees} • $priceWords",
@@ -510,22 +816,43 @@ fun MenuBrowserScreen(
                                     }
 
                                     // Dietary Badge Icon
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .border(
-                                                1.5.dp,
-                                                if (item.isVegetarian) VegGreen else NonVegRed,
-                                                RoundedCornerShape(4.dp)
-                                            )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
+                                        if (item.isJain) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .border(1.5.dp, JainYellow, RoundedCornerShape(4.dp))
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Shield,
+                                                    contentDescription = "Jain Friendly",
+                                                    tint = JainYellow,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+
                                         Box(
+                                            contentAlignment = Alignment.Center,
                                             modifier = Modifier
-                                                .size(10.dp)
-                                                .clip(CircleShape)
-                                                .background(if (item.isVegetarian) VegGreen else NonVegRed)
-                                        )
+                                                .size(24.dp)
+                                                .border(
+                                                    1.5.dp,
+                                                    if (item.isVegetarian) VegGreen else NonVegRed,
+                                                    RoundedCornerShape(4.dp)
+                                                )
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (item.isVegetarian) VegGreen else NonVegRed)
+                                            )
+                                        }
                                     }
                                 }
 
@@ -557,6 +884,7 @@ fun MenuBrowserScreen(
                                             .clickable {
                                                 hapticEngine.trigger(HapticPattern.CLICK)
                                                 navigator.selectItem(item)
+                                                highlightedItemId = item.itemId
                                                 val itemNarration = LayoutNarrator.generateItemSpokenDescription(item, selectedLanguage)
                                                 onSpeakNarration(itemNarration)
                                             }

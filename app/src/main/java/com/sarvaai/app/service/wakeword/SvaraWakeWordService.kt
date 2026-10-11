@@ -16,6 +16,9 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -26,6 +29,8 @@ import com.sarvaai.app.MainActivity
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import com.sarvaai.app.audio.earcons.EarconEngine
+import com.sarvaai.app.audio.earcons.EarconType
 import com.sarvaai.app.audio.recorder.WavEncoder
 import com.sarvaai.app.audio.vad.EnergyVad
 import com.sarvaai.app.audio.vad.VadStatus
@@ -48,6 +53,7 @@ import java.util.ArrayList
 class SvaraWakeWordService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val earconEngine by lazy { EarconEngine(this) }
     private val asrClient = AsrNmtClient()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
@@ -524,6 +530,35 @@ class SvaraWakeWordService : Service() {
 
     private fun triggerWakeWordDetected() {
         Log.i(TAG, "Triggering wake word detected: bringing MainActivity to foreground and starting listening")
+
+        // 1. Immediate tactile vibration feedback
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val manager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                manager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+            if (vibrator?.hasVibrator() == true) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(120, 255))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(120)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Wake word vibrator error: ${e.message}")
+        }
+
+        // 2. Immediate acoustic earcon / notification sound feedback
+        try {
+            earconEngine.play(EarconType.LISTEN_START)
+        } catch (e: Exception) {
+            Log.w(TAG, "Wake word earcon error: ${e.message}")
+        }
+
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or

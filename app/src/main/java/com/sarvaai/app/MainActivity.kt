@@ -148,6 +148,12 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, false) ||
             intent.getBooleanExtra("EXTRA_AUTO_START_LISTENING", false)) {
             Log.i("MainActivity", "onNewIntent received EXTRA_AUTO_START_LISTENING")
+            if (::earconEngine.isInitialized) {
+                earconEngine.play(EarconType.LISTEN_START)
+            }
+            if (::hapticEngine.isInitialized) {
+                hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
+            }
             autoStartListeningTrigger++
         }
     }
@@ -195,6 +201,8 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, false) == true ||
             intent?.getBooleanExtra("EXTRA_AUTO_START_LISTENING", false) == true) {
             Log.i("MainActivity", "onCreate received EXTRA_AUTO_START_LISTENING")
+            earconEngine.play(EarconType.LISTEN_START)
+            hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
             autoStartListeningTrigger++
         }
 
@@ -379,6 +387,10 @@ class MainActivity : ComponentActivity() {
                                     selectedLanguage = selectedLanguage,
                                     hapticEngine = hapticEngine,
                                     earconEngine = earconEngine,
+                                    audioRecorder = audioRecorder,
+                                    asrNmtClient = asrNmtClient,
+                                    groqClient = groqClient,
+                                    autoStartListeningTrigger = autoStartListeningTrigger,
                                     isAudioPlaying = isAudioPlaying,
                                     onSpeakNarration = { playSpeech(it, selectedLanguage) },
                                     onStopNarration = { stopSpeech() },
