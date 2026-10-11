@@ -38,18 +38,18 @@ class EnergyVad(
         }
         val rms = sqrt(sumSquares / numSamples.coerceAtLeast(1))
 
-        // Initial 300ms (15 frames) of silence calibration
-        if (totalFramesProcessed < 15) {
+        // Initial 200ms (10 frames) of silence calibration
+        if (totalFramesProcessed < 10) {
             noiseFloorRms = (noiseFloorRms * totalFramesProcessed + rms) / (totalFramesProcessed + 1)
             totalFramesProcessed++
             return VadStatus.CALIBRATING
         }
 
-        val speechThreshold = (noiseFloorRms * 2.5).coerceAtLeast(350.0)
+        val speechThreshold = (noiseFloorRms * 2.0).coerceIn(200.0, 1600.0)
 
         if (rms > speechThreshold) {
             speechFramesConsecutive++
-            if (speechFramesConsecutive >= 2) {
+            if (speechFramesConsecutive >= 1) {
                 if (!speechStarted) {
                     speechStarted = true
                     speechStartTimeMs = now

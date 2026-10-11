@@ -107,6 +107,8 @@ class AudioRecorder(
                 recordingJob = coroutineScope.launch(Dispatchers.IO) {
                     val pcmBuffer = ByteArray(BYTES_PER_FRAME)
                     val utteranceStream = ByteArrayOutputStream()
+                    val preRollCapacity = 20 // 20 frames * 20ms = 400ms pre-roll buffer
+                    val preRollBuffer = ArrayDeque<ByteArray>(preRollCapacity)
                     var speechCaptured = false
 
                     try {
@@ -135,7 +137,14 @@ class AudioRecorder(
 
                                 when (status) {
                                     VadStatus.SPEECH_ACTIVE -> {
-                                        speechCaptured = true
+                                        if (!speechCaptured) {
+                                            speechCaptured = true
+                                            // Flush all pre-roll frames so no initial syllables are clipped
+                                            while (preRollBuffer.isNotEmpty()) {
+                                                val preFrame = preRollBuffer.removeFirst()
+                                                utteranceStream.write(preFrame)
+                                            }
+                                        }
                                         utteranceStream.write(pcmBuffer, 0, readBytes)
                                     }
                                     VadStatus.SPEECH_ENDED -> {
@@ -152,6 +161,11 @@ class AudioRecorder(
                                     VadStatus.CALIBRATING, VadStatus.SILENCE -> {
                                         if (speechCaptured) {
                                             utteranceStream.write(pcmBuffer, 0, readBytes)
+                                        } else {
+                                            if (preRollBuffer.size >= preRollCapacity) {
+                                                preRollBuffer.removeFirst()
+                                            }
+                                            preRollBuffer.addLast(pcmBuffer.copyOf(readBytes))
                                         }
                                     }
                                 }

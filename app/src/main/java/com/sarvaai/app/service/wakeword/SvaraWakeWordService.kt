@@ -23,6 +23,22 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.sarvaai.app.MainActivity
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import com.sarvaai.app.audio.recorder.WavEncoder
+import com.sarvaai.app.audio.vad.EnergyVad
+import com.sarvaai.app.audio.vad.VadStatus
+import com.sarvaai.app.bhashini.asr.AsrNmtClient
+import com.sarvaai.app.core.result.Result
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.util.ArrayList
 
 /**
@@ -31,12 +47,16 @@ import java.util.ArrayList
  */
 class SvaraWakeWordService : Service() {
 
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val asrClient = AsrNmtClient()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var isListeningActive: Boolean = false
     private var isCurrentlyRecognizing: Boolean = false
     private var errorRetryCount: Int = 0
+    private var pcmWorkerJob: Job? = null
+    private var continuousAudioRecord: AudioRecord? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -192,6 +212,7 @@ class SvaraWakeWordService : Service() {
         mainHandler.post {
             initAndStartSpeechRecognizer()
         }
+        startContinuousPcmWakeWordStream()
     }
 
     private fun stopWakeWordListening() {
@@ -201,12 +222,166 @@ class SvaraWakeWordService : Service() {
         mainHandler.post {
             safeDestroyRecognizer()
         }
+        stopContinuousPcmStream()
         try {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
             }
         } catch (e: Exception) {
             Log.w(TAG, "WakeLock release error: ${e.message}")
+        }
+    }
+
+    private fun startContinuousPcmWakeWordStream() {
+        pcmWorkerJob?.cancel()
+        pcmWorkerJob = serviceScope.launch {
+            val sampleRate = 16000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            val frameBytes = 640 // 20ms at 16kHz 16-bit
+            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+            if (minBuf <= 0) return@launch
+
+            val vad = EnergyVad(sampleRate = sampleRate, frameDurationMs = 20, silenceTimeoutMs = 800L, maxUtteranceDurationMs = 3000L)
+            val pcmBuffer = ByteArray(frameBytes)
+            val utteranceStream = ByteArrayOutputStream()
+            val preRollCapacity = 15
+            val preRoll = ArrayDeque<ByteArray>(preRollCapacity)
+            var capturingUtterance = false
+
+            while (isActive && isListeningActive) {
+                var record: AudioRecord? = null
+                try {
+                    record = AudioRecord(
+                        MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                        sampleRate,
+                        channelConfig,
+                        audioFormat,
+                        (minBuf * 2).coerceAtLeast(frameBytes * 4)
+                    )
+                    if (record.state != AudioRecord.STATE_INITIALIZED) {
+                        try { record.release() } catch (_: Throwable) {}
+                        record = AudioRecord(
+                            MediaRecorder.AudioSource.MIC,
+                            sampleRate,
+                            channelConfig,
+                            audioFormat,
+                            (minBuf * 2).coerceAtLeast(frameBytes * 4)
+                        )
+                    }
+
+                    if (record.state != AudioRecord.STATE_INITIALIZED) {
+                        try { record.release() } catch (_: Throwable) {}
+                        kotlinx.coroutines.delay(1000L)
+                        continue
+                    }
+
+                    continuousAudioRecord = record
+                    record.startRecording()
+                    vad.reset()
+
+                    while (isActive && isListeningActive && record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        val readBytes = try {
+                            record.read(pcmBuffer, 0, frameBytes)
+                        } catch (t: Throwable) {
+                            -1
+                        }
+
+                        if (readBytes > 0) {
+                            val status = vad.processFrame(pcmBuffer, readBytes)
+                            when (status) {
+                                VadStatus.SPEECH_ACTIVE -> {
+                                    if (!capturingUtterance) {
+                                        capturingUtterance = true
+                                        while (preRoll.isNotEmpty()) {
+                                            utteranceStream.write(preRoll.removeFirst())
+                                        }
+                                    }
+                                    utteranceStream.write(pcmBuffer, 0, readBytes)
+                                }
+                                VadStatus.SPEECH_ENDED -> {
+                                    if (capturingUtterance && utteranceStream.size() > 0) {
+                                        val rawPcm = utteranceStream.toByteArray()
+                                        utteranceStream.reset()
+                                        capturingUtterance = false
+                                        val wavBytes = WavEncoder.encodeToWav(rawPcm, sampleRate)
+                                        // Process utterance asynchronously
+                                        serviceScope.launch {
+                                            checkUtteranceForHotwords(wavBytes)
+                                        }
+                                    }
+                                }
+                                VadStatus.CALIBRATING, VadStatus.SILENCE -> {
+                                    if (capturingUtterance) {
+                                        utteranceStream.write(pcmBuffer, 0, readBytes)
+                                    } else {
+                                        if (preRoll.size >= preRollCapacity) {
+                                            preRoll.removeFirst()
+                                        }
+                                        preRoll.addLast(pcmBuffer.copyOf(readBytes))
+                                    }
+                                }
+                            }
+                        } else if (readBytes < 0) {
+                            break
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Continuous PCM audio loop exception: ${e.message}")
+                } finally {
+                    try {
+                        if (record?.state == AudioRecord.STATE_INITIALIZED) {
+                            if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                                try { record.stop() } catch (_: Throwable) {}
+                            }
+                            try { record.release() } catch (_: Throwable) {}
+                        }
+                    } catch (_: Throwable) {}
+                    continuousAudioRecord = null
+                }
+                kotlinx.coroutines.delay(500L)
+            }
+        }
+    }
+
+    private suspend fun checkUtteranceForHotwords(wavBytes: ByteArray) {
+        if (wavBytes.isEmpty()) return
+        try {
+            val res = asrClient.transcribeAndTranslate(wavBytes, "en")
+            if (res is Result.Success) {
+                val transcript = res.data.originalTranscript.trim()
+                val translation = res.data.englishTranslation.trim()
+                Log.d(TAG, "PCM Stream ASR Transcript: '$transcript' | Translation: '$translation'")
+
+                if (WakeWordDetector.isWakeWord(transcript) || WakeWordDetector.isWakeWord(translation)) {
+                    Log.i(TAG, "Wake word matched in continuous PCM stream! Triggering open.")
+                    mainHandler.post { triggerWakeWordDetected() }
+                } else if (WakeWordDetector.isCloseCommand(transcript) || WakeWordDetector.isCloseCommand(translation)) {
+                    Log.i(TAG, "Close command matched in continuous PCM stream! Triggering close.")
+                    mainHandler.post { triggerCloseCommandDetected() }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error evaluating hotword ASR: ${e.message}")
+        }
+    }
+
+    private fun stopContinuousPcmStream() {
+        pcmWorkerJob?.cancel()
+        pcmWorkerJob = null
+        try {
+            continuousAudioRecord?.let { record ->
+                if (record.state == AudioRecord.STATE_INITIALIZED) {
+                    if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        try { record.stop() } catch (_: Throwable) {}
+                    }
+                    try { record.release() } catch (_: Throwable) {}
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Error stopping continuous AudioRecord: ${t.message}")
+        } finally {
+            continuousAudioRecord = null
         }
     }
 
@@ -444,6 +619,7 @@ class SvaraWakeWordService : Service() {
         super.onDestroy()
         Log.i(TAG, "SvaraWakeWordService onDestroy")
         stopWakeWordListening()
+        serviceScope.cancel()
     }
 
     companion object {

@@ -182,7 +182,15 @@ object WakeWordDetector {
         "క్లోజ్ చెయ్యి",
         "యాప్ క్లోజ్ చెయ్యి",
         "close cheyyi",
-        "app close cheyyi"
+        "app close cheyyi",
+        "క్లోజ్ యాప్",
+        "క్లోజ్ అప్లికేషన్",
+        "క్లోజ్",
+        "క్లోస్",
+        "ఎగ్జిట్",
+        "క్లోజ్ చేయండి",
+        "మూసివేయండి",
+        "బంద్ చేయండి"
     )
 
     private val CLOSE_PHRASES_HI = listOf(
@@ -208,7 +216,18 @@ object WakeWordDetector {
         "band karo",
         "band kar do",
         "band kijiye",
-        "close karo"
+        "close karo",
+        "क्लोज ऐप",
+        "क्लोज एप",
+        "क्लोज",
+        "क्लोस",
+        "क्लोज एप्लीकेशन",
+        "क्लोज दी एप्लीकेशन",
+        "क्लोज करो",
+        "क्लोज कीजिए",
+        "क्लोज करें",
+        "एक्जिट",
+        "बाय बाय"
     )
 
     val ALL_CLOSE_COMMANDS: List<String> = (CLOSE_PHRASES_EN + CLOSE_PHRASES_TE + CLOSE_PHRASES_HI).distinct()
@@ -481,10 +500,31 @@ object WakeWordDetector {
                 if (single in listOf(
                         "exit", "close", "quit", "shutdown", "bye", "goodbye",
                         "ఆపు", "మూసివేయి", "మూసేయి", "నిష్క్రమించు", "సెలవు",
-                        "अलविदा", "एग्जिट", "बाय"
+                        "अलविदा", "एग्जिट", "बाय", "क्लोज", "क्लोस", "క్లోజ్", "క్లోస్", "ఎగ్జిట్"
                     )
                 ) {
                     return true
+                }
+            }
+
+            // 4. Phonetic & Fuzzy Edit Distance matching on short utterances
+            val phonetic = toPhoneticRepresentation(stripped)
+            val phoneticClosePhrases = listOf("clos ap", "klos ap", "exit ap", "kvit ap", "sut daun ap", "sutdaun ap", "band karo", "band kar do", "klos karo", "klos cheyyi")
+            for (pCmd in phoneticClosePhrases) {
+                if (phonetic == pCmd || phonetic.startsWith("$pCmd ") || phonetic.endsWith(" $pCmd") || phonetic.contains(" $pCmd ")) {
+                    return true
+                }
+            }
+
+            if (tokens.size <= 3) {
+                for (token in tokens) {
+                    if (token in listOf("close", "exit", "quit", "shutdown") ||
+                        (token.length >= 4 && (levenshteinDistance(token, "close") <= 1 || levenshteinDistance(token, "exit") <= 1 || levenshteinDistance(token, "quit") <= 1))
+                    ) {
+                        if (tokens.size == 1 || tokens.any { it in listOf("app", "application", "svara", "swara", "svare", "sarva", "this", "it") }) {
+                            return true
+                        }
+                    }
                 }
             }
         }

@@ -166,7 +166,9 @@ class WakeWordAndVoiceLifecycleTest {
             "దయచేసి యాప్ మూసివేయి",
             "స్వరా యాప్ క్లోజ్ చేయి",
             "close cheyyi",
-            "app close cheyyi"
+            "app close cheyyi",
+            "క్లోజ్ యాప్",
+            "క్లోజ్"
         )
 
         for (cmd in variations) {
@@ -198,7 +200,10 @@ class WakeWordAndVoiceLifecycleTest {
             "band karo",
             "band kar do",
             "band kijiye",
-            "close karo"
+            "close karo",
+            "क्लोज ऐप",
+            "क्लोज",
+            "एक्जिट"
         )
 
         for (cmd in variations) {
