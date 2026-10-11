@@ -274,7 +274,6 @@ fun SmartBillSplitScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp)
-                    .systemBarsPadding()
             ) {
                 // ============================================================
                 // 1. TOP HEADER BAR
@@ -841,6 +840,7 @@ fun SmartBillSplitScreen(
                                 cornerRadius = 20.dp
                             )
                             .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Equal Split Tab
@@ -854,11 +854,11 @@ fun SmartBillSplitScreen(
                                 .fillMaxHeight()
                                 .neomorphicSurface(
                                     shape = RoundedCornerShape(18.dp),
-                                    surfaceColor = if (isEqualSelected) NeoSurface else Color.Transparent,
-                                    lightColor = if (isEqualSelected) NeoLightShadow else Color.Transparent,
-                                    darkColor = if (isEqualSelected) NeoDarkShadow else Color.Transparent,
-                                    borderColor = if (isEqualSelected) NeoBorder else Color.Transparent,
-                                    elevation = if (isEqualSelected) 3.dp else 0.dp,
+                                    surfaceColor = if (isEqualSelected) NeoPrimary else NeoSurface,
+                                    lightColor = if (isEqualSelected) Color(0x6693C5FD) else NeoLightShadow,
+                                    darkColor = if (isEqualSelected) Color(0x661E3A8A) else NeoDarkShadow,
+                                    borderColor = if (isEqualSelected) NeoPrimary else NeoBorder,
+                                    elevation = if (isEqualSelected) 2.dp else 1.dp,
                                     isPressed = isEqualPressed,
                                     cornerRadius = 18.dp
                                 )
@@ -875,11 +875,14 @@ fun SmartBillSplitScreen(
                                     role = Role.Tab
                                 }
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.Groups,
                                     contentDescription = null,
-                                    tint = if (isEqualSelected) NeoPrimary else NeoTextSecondary,
+                                    tint = if (isEqualSelected) NeoOnPrimary else NeoTextSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -887,7 +890,7 @@ fun SmartBillSplitScreen(
                                     text = "Equal Split",
                                     fontSize = 12.sp,
                                     fontWeight = if (isEqualSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isEqualSelected) NeoPrimary else NeoTextSecondary
+                                    color = if (isEqualSelected) NeoOnPrimary else NeoTextSecondary
                                 )
                             }
                         }
@@ -903,11 +906,11 @@ fun SmartBillSplitScreen(
                                 .fillMaxHeight()
                                 .neomorphicSurface(
                                     shape = RoundedCornerShape(18.dp),
-                                    surfaceColor = if (isItemSelected) NeoSurface else Color.Transparent,
-                                    lightColor = if (isItemSelected) NeoLightShadow else Color.Transparent,
-                                    darkColor = if (isItemSelected) NeoDarkShadow else Color.Transparent,
-                                    borderColor = if (isItemSelected) NeoBorder else Color.Transparent,
-                                    elevation = if (isItemSelected) 3.dp else 0.dp,
+                                    surfaceColor = if (isItemSelected) NeoPrimary else NeoSurface,
+                                    lightColor = if (isItemSelected) Color(0x6693C5FD) else NeoLightShadow,
+                                    darkColor = if (isItemSelected) Color(0x661E3A8A) else NeoDarkShadow,
+                                    borderColor = if (isItemSelected) NeoPrimary else NeoBorder,
+                                    elevation = if (isItemSelected) 2.dp else 1.dp,
                                     isPressed = isItemPressed,
                                     cornerRadius = 18.dp
                                 )
@@ -924,11 +927,14 @@ fun SmartBillSplitScreen(
                                     role = Role.Tab
                                 }
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.RestaurantMenu,
                                     contentDescription = null,
-                                    tint = if (isItemSelected) NeoPrimary else NeoTextSecondary,
+                                    tint = if (isItemSelected) NeoOnPrimary else NeoTextSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -936,7 +942,7 @@ fun SmartBillSplitScreen(
                                     text = "By Items",
                                     fontSize = 12.sp,
                                     fontWeight = if (isItemSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isItemSelected) NeoPrimary else NeoTextSecondary
+                                    color = if (isItemSelected) NeoOnPrimary else NeoTextSecondary
                                 )
                             }
                         }

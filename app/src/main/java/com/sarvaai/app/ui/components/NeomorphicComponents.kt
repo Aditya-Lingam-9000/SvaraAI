@@ -423,11 +423,7 @@ fun NeomorphicMicButton(
         label = "spin_rotation"
     )
 
-    val waveColor = when {
-        isRecording -> VegGreen
-        isProcessing -> NeoPrimary
-        else -> NeoPrimary
-    }
+    val waveColor = VegGreen
 
     val dynamicScale by animateFloatAsState(
         targetValue = when {
@@ -513,52 +509,15 @@ fun NeomorphicMicButton(
                         shape = CircleShape
                     )
             )
-        } else if (isProcessing) {
-            // Smooth glowing spin ring for processing state
-            Box(
-                modifier = Modifier
-                    .size(108.dp)
-                    .rotate(spinRotation)
-                    .drawBehind {
-                        drawCircle(
-                            brush = Brush.sweepGradient(
-                                colors = listOf(
-                                    NeoPrimary.copy(alpha = 0.0f),
-                                    NeoPrimary.copy(alpha = 0.35f),
-                                    NeoPrimary,
-                                    Color.White,
-                                    NeoPrimary,
-                                    NeoPrimary.copy(alpha = 0.0f)
-                                )
-                            ),
-                            style = Stroke(width = 3.dp.toPx())
-                        )
-                    }
-            )
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .scale(pulseScale1)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                NeoPrimary.copy(alpha = (pulseAlpha1 * 0.35f).coerceIn(0f, 1f)),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
         }
 
         // Main Core Neomorphic Circle Button
         val coreSurfaceColor = when {
             isRecording -> VegGreen
-            isProcessing -> NeoPrimary
             else -> NeoSurface
         }
         val iconColor = when {
-            isRecording || isProcessing -> NeoOnPrimary
+            isRecording -> NeoOnPrimary
             else -> NeoPrimary
         }
 
@@ -570,9 +529,9 @@ fun NeomorphicMicButton(
                 .neomorphicSurface(
                     shape = CircleShape,
                     surfaceColor = coreSurfaceColor,
-                    lightColor = if (isRecording || isProcessing) Color(0x66FFFFFF) else NeoLightShadow,
-                    darkColor = if (isRecording) Color(0x4D000000) else if (isProcessing) Color(0x4D1E3A8A) else NeoDarkShadow,
-                    borderColor = if (isRecording) VegGreen else if (isProcessing) NeoPrimary else NeoBorder,
+                    lightColor = if (isRecording) Color(0x66FFFFFF) else NeoLightShadow,
+                    darkColor = if (isRecording) Color(0x4D000000) else NeoDarkShadow,
+                    borderColor = if (isRecording) VegGreen else NeoBorder,
                     elevation = 7.dp,
                     isPressed = isPressed,
                     cornerRadius = 48.dp
@@ -697,7 +656,7 @@ fun NeomorphicPill(
 }
 
 /**
- * Top-bar Segmented Neomorphic Language Switcher for Indic Multilingual Speech (EN, हिन्दी, తెలుగు).
+ * Top-bar Segmented Neomorphic Language Switcher for Indic Multilingual Speech (English, हिन्दी, తెలుగు).
  * Zero emojis, vector icons only.
  */
 @Composable
@@ -707,9 +666,9 @@ fun NeomorphicLanguageSelector(
     modifier: Modifier = Modifier
 ) {
     val languages = listOf(
-        Triple("en", "English", "EN"),
-        Triple("hi", "हिन्दी", "HI"),
-        Triple("te", "తెలుగు", "TE")
+        Pair("en", "English"),
+        Pair("hi", "हिन्दी"),
+        Pair("te", "తెలుగు")
     )
 
     Row(
@@ -727,7 +686,7 @@ fun NeomorphicLanguageSelector(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        languages.forEach { (code, nativeName, shortCode) ->
+        languages.forEach { (code, nativeName) ->
             val isSelected = selectedLanguage.equals(code, ignoreCase = true)
             val interactionSource = remember { MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
@@ -760,7 +719,7 @@ fun NeomorphicLanguageSelector(
                     )
                     .padding(horizontal = 8.dp)
                     .semantics {
-                        contentDescription = "$nativeName language option ($shortCode)"
+                        contentDescription = "$nativeName language option"
                         role = Role.Tab
                     }
             ) {
@@ -778,11 +737,13 @@ fun NeomorphicLanguageSelector(
                         Spacer(modifier = Modifier.width(4.dp))
                     }
                     Text(
-                        text = "$nativeName ($shortCode)",
+                        text = nativeName,
                         fontSize = 13.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isSelected) NeoOnPrimary else NeoTextSecondary,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }

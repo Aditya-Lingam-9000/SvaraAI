@@ -356,9 +356,6 @@ class SvaraWakeWordService : Service() {
                 if (WakeWordDetector.isWakeWord(transcript) || WakeWordDetector.isWakeWord(translation)) {
                     Log.i(TAG, "Wake word matched in continuous PCM stream! Triggering open.")
                     mainHandler.post { triggerWakeWordDetected() }
-                } else if (WakeWordDetector.isCloseCommand(transcript) || WakeWordDetector.isCloseCommand(translation)) {
-                    Log.i(TAG, "Close command matched in continuous PCM stream! Triggering close.")
-                    mainHandler.post { triggerCloseCommandDetected() }
                 }
             }
         } catch (e: Exception) {
@@ -506,10 +503,6 @@ class SvaraWakeWordService : Service() {
                             Log.i(TAG, "Wake word detected in partial results: '$text'")
                             triggerWakeWordDetected()
                             break
-                        } else if (WakeWordDetector.isCloseCommand(text)) {
-                            Log.i(TAG, "Close command detected in partial results: '$text'")
-                            triggerCloseCommandDetected()
-                            break
                         }
                     }
                 }
@@ -524,11 +517,6 @@ class SvaraWakeWordService : Service() {
             if (WakeWordDetector.isWakeWord(text)) {
                 Log.i(TAG, "Wake word matched onResults: '$text'")
                 triggerWakeWordDetected()
-                return
-            }
-            if (WakeWordDetector.isCloseCommand(text)) {
-                Log.i(TAG, "Close command matched onResults: '$text'")
-                triggerCloseCommandDetected()
                 return
             }
         }
@@ -582,14 +570,6 @@ class SvaraWakeWordService : Service() {
                 Log.e(TAG, "startActivity failed: ${ex.message}", ex)
             }
         }
-    }
-
-    private fun triggerCloseCommandDetected() {
-        Log.i(TAG, "Broadcasting ACTION_CLOSE_APP to close all activities")
-        val closeIntent = Intent(ACTION_CLOSE_APP).apply {
-            setPackage(packageName)
-        }
-        sendBroadcast(closeIntent)
     }
 
     private fun scheduleRestartListening(delayMs: Long) {

@@ -121,13 +121,13 @@ object WakeWordDetector {
         "exit the app",
         "exit application",
         "exit the application",
-        "exit",
-        "close",
-        "quit",
         "quit app",
-        "shutdown",
-        "shut down",
+        "quit the app",
+        "quit application",
+        "shutdown app",
         "shut down app",
+        "shutdown application",
+        "shut down application",
         "stop app",
         "terminate app",
         "bye svara",
@@ -135,9 +135,6 @@ object WakeWordDetector {
         "bye svare",
         "goodbye svara",
         "goodbye swara",
-        "goodbye",
-        "good bye",
-        "bye",
         "svara close",
         "swara close",
         "svare close",
@@ -154,6 +151,12 @@ object WakeWordDetector {
         "hey svara close the application",
         "hey svare close the application",
         "hey swara close the application",
+        "svara exit",
+        "swara exit",
+        "hey svara exit",
+        "hey swara exit",
+        "svara exit app",
+        "hey svara exit app",
         "svara exit application",
         "hey svara exit application",
         "close svara",
@@ -161,7 +164,12 @@ object WakeWordDetector {
         "close svare",
         "exit svara",
         "exit swara",
-        "app close"
+        "app close",
+        "application close",
+        "close svara ai",
+        "exit svara ai",
+        "shutdown svara",
+        "shut down svara"
     )
 
     private val CLOSE_PHRASES_TE = listOf(
@@ -172,11 +180,8 @@ object WakeWordDetector {
         "మూసివేయి",
         "మూసేయి",
         "యాప్ ఆపు",
-        "ఆపు",
-        "నిష్క్రమించు",
         "యాప్ నిష్క్రమించు",
         "యాప్ నుండి నిష్క్రమించు",
-        "సెలవు",
         "యాప్ బంద్ చేయి",
         "బంద్ చేయి",
         "క్లోజ్ చెయ్యి",
@@ -185,12 +190,16 @@ object WakeWordDetector {
         "app close cheyyi",
         "క్లోజ్ యాప్",
         "క్లోజ్ అప్లికేషన్",
-        "క్లోజ్",
-        "క్లోస్",
-        "ఎగ్జిట్",
         "క్లోజ్ చేయండి",
         "మూసివేయండి",
-        "బంద్ చేయండి"
+        "బంద్ చేయండి",
+        "స్వర క్లోజ్ చేయి",
+        "స్వరా క్లోజ్ చేయి",
+        "స్వర మూసివేయి",
+        "స్వరా మూసివేయి",
+        "స్వరా యాప్ క్లోజ్ చేయి",
+        "హే స్వరా క్లోజ్ చేయి",
+        "హే స్వర మూసివేయి"
     )
 
     private val CLOSE_PHRASES_HI = listOf(
@@ -200,17 +209,15 @@ object WakeWordDetector {
         "बंद करो",
         "बंद कीजिए",
         "बंद करें",
+        "बंद कर दो",
+        "ऐप बंद कर दो",
         "बाहर निकलो",
         "ऐप से बाहर निकलो",
-        "अलविदा",
-        "एग्जिट",
-        "बाय",
         "बाय स्वरा",
+        "अलविदा स्वरा",
         "एप्लिकेशन बंद करो",
         "एप्लिकेशन बंद कीजिए",
         "एप्लिकेशन बंद करें",
-        "बंद कर दो",
-        "ऐप बंद कर दो",
         "app close karo",
         "app band karo",
         "band karo",
@@ -219,15 +226,15 @@ object WakeWordDetector {
         "close karo",
         "क्लोज ऐप",
         "क्लोज एप",
-        "क्लोज",
-        "क्लोस",
         "क्लोज एप्लीकेशन",
         "क्लोज दी एप्लीकेशन",
         "क्लोज करो",
         "क्लोज कीजिए",
         "क्लोज करें",
-        "एक्जिट",
-        "बाय बाय"
+        "बाय बाय",
+        "स्वरा बंद करो",
+        "स्वरा क्लोज करो",
+        "हे स्वरा बंद करो"
     )
 
     val ALL_CLOSE_COMMANDS: List<String> = (CLOSE_PHRASES_EN + CLOSE_PHRASES_TE + CLOSE_PHRASES_HI).distinct()
@@ -451,21 +458,24 @@ object WakeWordDetector {
     }
 
     /**
-     * Checks if the given spoken text contains or matches an application shutdown / close command.
+     * Checks if the given spoken text contains or matches an explicit application shutdown / close command.
+     * Requires explicit close intent and canonical phrases; ambiguous single words ("bye", "exit", "close", "quit")
+     * are strictly rejected to prevent false triggering from background noise or ASR hallucinations.
      */
     fun isCloseCommand(text: String): Boolean {
         val normalized = normalizeText(text)
         if (normalized.isBlank()) return false
 
         val hasFoodKeywords = containsFoodOrOrderKeywords(normalized)
+        if (hasFoodKeywords) return false
 
-        // 1. Direct exact match or phrase-boundary containment with any canonical close phrase
+        // 1. Direct exact match or phrase-boundary containment with canonical close phrases
         for (closeCmd in ALL_CLOSE_COMMANDS) {
             val normCmd = normalizeText(closeCmd)
             if (normalized == normCmd) {
                 return true
             }
-            if (!hasFoodKeywords && normCmd.contains(" ")) {
+            if (normCmd.contains(" ")) {
                 if (normalized.startsWith("$normCmd ") ||
                     normalized.endsWith(" $normCmd") ||
                     normalized.contains(" $normCmd ")
@@ -477,55 +487,46 @@ object WakeWordDetector {
 
         // 2. Strip conversational / polite prefixes or suffixes and check match again
         val stripped = stripConversationalTerms(normalized)
-        for (closeCmd in ALL_CLOSE_COMMANDS) {
-            val normCmd = normalizeText(closeCmd)
-            if (stripped == normCmd) {
-                return true
-            }
-            if (!hasFoodKeywords && normCmd.contains(" ")) {
-                if (stripped.startsWith("$normCmd ") ||
-                    stripped.endsWith(" $normCmd") ||
-                    stripped.contains(" $normCmd ")
-                ) {
+        if (stripped.isNotBlank()) {
+            for (closeCmd in ALL_CLOSE_COMMANDS) {
+                val normCmd = normalizeText(closeCmd)
+                if (stripped == normCmd) {
                     return true
+                }
+                if (normCmd.contains(" ")) {
+                    if (stripped.startsWith("$normCmd ") ||
+                        stripped.endsWith(" $normCmd") ||
+                        stripped.contains(" $normCmd ")
+                    ) {
+                        return true
+                    }
                 }
             }
         }
 
-        // 3. Exact single-word commands (only when utterance has exactly 1 token after stripping courtesies and no food keywords)
-        if (!hasFoodKeywords) {
-            val tokens = stripped.split(" ").filter { it.isNotBlank() }
-            if (tokens.size == 1) {
-                val single = tokens.first()
-                if (single in listOf(
-                        "exit", "close", "quit", "shutdown", "bye", "goodbye",
-                        "ఆపు", "మూసివేయి", "మూసేయి", "నిష్క్రమించు", "సెలవు",
-                        "अलविदा", "एग्जिट", "बाय", "क्लोज", "क्लोस", "క్లోజ్", "క్లోస్", "ఎగ్జిట్"
-                    )
-                ) {
-                    return true
-                }
+        // 3. Phonetic matching on explicit multi-word close phrases
+        val phonetic = toPhoneticRepresentation(stripped)
+        val phoneticClosePhrases = listOf(
+            "clos ap", "klos ap", "exit ap", "kvit ap", "sut daun ap", "sutdaun ap",
+            "band karo", "band kar do", "klos karo", "klos cheyyi", "svara clos", "swara clos",
+            "hey svara clos", "hey swara clos"
+        )
+        for (pCmd in phoneticClosePhrases) {
+            if (phonetic == pCmd || phonetic.startsWith("$pCmd ") || phonetic.endsWith(" $pCmd") || phonetic.contains(" $pCmd ")) {
+                return true
             }
+        }
 
-            // 4. Phonetic & Fuzzy Edit Distance matching on short utterances
-            val phonetic = toPhoneticRepresentation(stripped)
-            val phoneticClosePhrases = listOf("clos ap", "klos ap", "exit ap", "kvit ap", "sut daun ap", "sutdaun ap", "band karo", "band kar do", "klos karo", "klos cheyyi")
-            for (pCmd in phoneticClosePhrases) {
-                if (phonetic == pCmd || phonetic.startsWith("$pCmd ") || phonetic.endsWith(" $pCmd") || phonetic.contains(" $pCmd ")) {
-                    return true
-                }
+        // 4. Multi-token fuzzy matching ONLY when explicit app or assistant target is present (rejects isolated single words)
+        val tokens = stripped.split(" ").filter { it.isNotBlank() }
+        if (tokens.size in 2..4) {
+            val hasAppOrAssistantTarget = tokens.any { it in listOf("app", "application", "svara", "swara", "svare", "sarva") }
+            val hasCloseVerb = tokens.any { token ->
+                token in listOf("close", "exit", "quit", "shutdown", "stop", "terminate") ||
+                (token.length >= 4 && (levenshteinDistance(token, "close") <= 1 || levenshteinDistance(token, "exit") <= 1 || levenshteinDistance(token, "quit") <= 1))
             }
-
-            if (tokens.size <= 3) {
-                for (token in tokens) {
-                    if (token in listOf("close", "exit", "quit", "shutdown") ||
-                        (token.length >= 4 && (levenshteinDistance(token, "close") <= 1 || levenshteinDistance(token, "exit") <= 1 || levenshteinDistance(token, "quit") <= 1))
-                    ) {
-                        if (tokens.size == 1 || tokens.any { it in listOf("app", "application", "svara", "swara", "svare", "sarva", "this", "it") }) {
-                            return true
-                        }
-                    }
-                }
+            if (hasAppOrAssistantTarget && hasCloseVerb) {
+                return true
             }
         }
 

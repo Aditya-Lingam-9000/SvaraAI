@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
     private val closeAppReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action
-            if (action == WakeWordDetector.ACTION_CLOSE_APP || action == SvaraWakeWordService.ACTION_STOP_SERVICE) {
+            if (action == WakeWordDetector.ACTION_CLOSE_APP) {
                 Log.i("MainActivity", "Close app broadcast received ($action). Terminating application...")
                 finishAndRemoveTask()
                 finishAffinity()
@@ -157,9 +157,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // Register Close App Broadcast Receiver
-        val filter = IntentFilter(WakeWordDetector.ACTION_CLOSE_APP).apply {
-            addAction(SvaraWakeWordService.ACTION_STOP_SERVICE)
-        }
+        val filter = IntentFilter(WakeWordDetector.ACTION_CLOSE_APP)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(closeAppReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
@@ -755,7 +753,7 @@ fun NeomorphicTopAppBar(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Row 2: Global Segmented Language Switcher (EN, हिन्दी, తెలుగు)
+            // Row 2: Global Segmented Language Switcher (English, हिन्दी, తెలుగు)
             NeomorphicLanguageSelector(
                 selectedLanguage = selectedLanguage,
                 onLanguageSelected = onLanguageSelected
@@ -889,12 +887,11 @@ fun NeomorphicBottomNavBar(
                                 imageVector = tab.icon,
                                 contentDescription = null,
                                 tint = if (isSelected) NeoPrimary else NeoTextSecondary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(19.dp)
                             )
-                            Spacer(modifier = Modifier.height(1.dp))
                             Text(
                                 text = tab.title,
-                                fontSize = 10.5.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isSelected) NeoPrimary else NeoTextSecondary,
                                 maxLines = 1

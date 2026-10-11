@@ -61,12 +61,12 @@ class WakeWordDetectorTest {
         assertTrue(WakeWordDetector.isCloseCommand("close the app"))
         assertTrue(WakeWordDetector.isCloseCommand("close application"))
         assertTrue(WakeWordDetector.isCloseCommand("exit app"))
-        assertTrue(WakeWordDetector.isCloseCommand("exit"))
+        assertTrue(WakeWordDetector.isCloseCommand("exit the application"))
         assertTrue(WakeWordDetector.isCloseCommand("svara close"))
         assertTrue(WakeWordDetector.isCloseCommand("hey svara close"))
         assertTrue(WakeWordDetector.isCloseCommand("close svara"))
         assertTrue(WakeWordDetector.isCloseCommand("quit app"))
-        assertTrue(WakeWordDetector.isCloseCommand("shutdown"))
+        assertTrue(WakeWordDetector.isCloseCommand("shutdown app"))
     }
 
     @Test
@@ -76,6 +76,7 @@ class WakeWordDetectorTest {
         assertTrue(WakeWordDetector.isCloseCommand("మూసివేయి"))
         assertTrue(WakeWordDetector.isCloseCommand("క్లోజ్ చేయి"))
         assertTrue(WakeWordDetector.isCloseCommand("యాప్ ఆపు"))
+        assertTrue(WakeWordDetector.isCloseCommand("యాప్ బంద్ చేయి"))
     }
 
     @Test
@@ -85,6 +86,7 @@ class WakeWordDetectorTest {
         assertTrue(WakeWordDetector.isCloseCommand("ऐप बंद कीजिए"))
         assertTrue(WakeWordDetector.isCloseCommand("बंद कर दो"))
         assertTrue(WakeWordDetector.isCloseCommand("बाहर निकलो"))
+        assertTrue(WakeWordDetector.isCloseCommand("बाय स्वरा"))
     }
 
     @Test
@@ -98,5 +100,18 @@ class WakeWordDetectorTest {
         assertFalse(WakeWordDetector.isCloseCommand("Add more butter"))
         assertFalse(WakeWordDetector.isCloseCommand("Show items in menu"))
         assertFalse(WakeWordDetector.isCloseCommand("Hello how are you"))
+
+        // Ambiguous single words MUST NOT trigger close command
+        assertFalse(WakeWordDetector.isCloseCommand("exit"))
+        assertFalse(WakeWordDetector.isCloseCommand("close"))
+        assertFalse(WakeWordDetector.isCloseCommand("quit"))
+        assertFalse(WakeWordDetector.isCloseCommand("shutdown"))
+        assertFalse(WakeWordDetector.isCloseCommand("bye"))
+        assertFalse(WakeWordDetector.isCloseCommand("goodbye"))
+        assertFalse(WakeWordDetector.isCloseCommand("ఆపు"))
+        assertFalse(WakeWordDetector.isCloseCommand("సెలవు"))
+        assertFalse(WakeWordDetector.isCloseCommand("अलविदा"))
+        assertFalse(WakeWordDetector.isCloseCommand("बाय"))
+        assertFalse(WakeWordDetector.isCloseCommand("एग्जिट"))
     }
 }

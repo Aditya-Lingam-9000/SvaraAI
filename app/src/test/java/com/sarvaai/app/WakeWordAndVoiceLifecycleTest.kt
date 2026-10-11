@@ -116,16 +116,10 @@ class WakeWordAndVoiceLifecycleTest {
             "exit the application",
             "exit app",
             "exit the app",
-            "exit",
-            "close",
-            "quit",
             "quit app",
-            "shut down",
-            "shutdown",
             "shut down app",
+            "shutdown app",
             "stop app",
-            "goodbye",
-            "bye",
             "bye svara",
             "bye swara",
             "goodbye svara",
@@ -155,20 +149,16 @@ class WakeWordAndVoiceLifecycleTest {
             "క్లోజ్ చేయి",
             "మూసివేయి",
             "మూసేయి",
-            "నిష్క్రమించు",
             "యాప్ నిష్క్రమించు",
             "యాప్ నుండి నిష్క్రమించు",
-            "సెలవు",
             "యాప్ ఆపు",
-            "ఆపు",
             "యాప్ బంద్ చేయి",
             "బంద్ చేయి",
             "దయచేసి యాప్ మూసివేయి",
             "స్వరా యాప్ క్లోజ్ చేయి",
             "close cheyyi",
             "app close cheyyi",
-            "క్లోజ్ యాప్",
-            "క్లోజ్"
+            "క్లోజ్ యాప్"
         )
 
         for (cmd in variations) {
@@ -187,9 +177,6 @@ class WakeWordAndVoiceLifecycleTest {
             "बंद करें",
             "बाहर निकलो",
             "ऐप से बाहर निकलो",
-            "अलविदा",
-            "एग्जिट",
-            "बाय",
             "बाय स्वरा",
             "एप्लिकेशन बंद करो",
             "एप्लिकेशन बंद कीजिए",
@@ -201,9 +188,7 @@ class WakeWordAndVoiceLifecycleTest {
             "band kar do",
             "band kijiye",
             "close karo",
-            "क्लोज ऐप",
-            "क्लोज",
-            "एक्जिट"
+            "क्लोज ऐप"
         )
 
         for (cmd in variations) {
@@ -231,7 +216,27 @@ class WakeWordAndVoiceLifecycleTest {
             "कुल बिल कितना हुआ?",
             "क्या यहाँ शुद्ध शाकाहारी खाना मिलता है?",
             "कृपया थोड़ा पानी दीजिए",
-            "बहुत बहुत धन्यवाद"
+            "बहुत बहुत धन्यवाद",
+            // Ambiguous single words that must NOT trigger app close
+            "exit",
+            "close",
+            "quit",
+            "shutdown",
+            "shut down",
+            "bye",
+            "goodbye",
+            "good bye",
+            "ఆపు",
+            "సెలవు",
+            "నిష్క్రమించు",
+            "క్లోజ్",
+            "క్లోస్",
+            "अलविदा",
+            "एग्जिट",
+            "बाय",
+            "क्लोज",
+            "क्लोस",
+            "एक्जिट"
         )
 
         for (sentence in regularSentences) {

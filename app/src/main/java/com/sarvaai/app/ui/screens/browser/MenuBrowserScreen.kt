@@ -2,10 +2,15 @@ package com.sarvaai.app.ui.screens.browser
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,9 +26,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,7 +47,7 @@ import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.menu.narrator.LayoutNarrator
 import com.sarvaai.app.menu.navigation.NavigationAction
 import com.sarvaai.app.menu.navigation.VoiceMenuNavigator
-import com.sarvaai.app.ui.components.AccessibleButton
+import com.sarvaai.app.ui.components.neomorphicSurface
 import com.sarvaai.app.ui.theme.*
 
 @Composable
@@ -103,7 +111,6 @@ fun MenuBrowserScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
-                .systemBarsPadding()
         ) {
             // Header Bar
             Row(
@@ -111,7 +118,7 @@ fun MenuBrowserScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp)
+                    .padding(top = 4.dp, bottom = 8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -191,49 +198,124 @@ fun MenuBrowserScreen(
                 }
             }
 
-            // Overview Narration & Cart Buttons (Neomorphic White)
+            // Overview Narration & Cart Buttons (Standardized 46.dp compact Neomorphic buttons)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                AccessibleButton(
-                    text = "Hear Menu Layout",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                        earconEngine.play(EarconType.ORDER_CONFIRMED)
-                        val overview = LayoutNarrator.generateLayoutSummary(restaurantName, sections, itemsBySection, selectedLanguage)
-                        onSpeakNarration(overview)
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = true,
-                    leadingIcon = {
+                // Hear Menu Layout (Primary)
+                val layoutInteraction = remember { MutableInteractionSource() }
+                val isLayoutPressed by layoutInteraction.collectIsPressedAsState()
+                val layoutScale by animateFloatAsState(
+                    targetValue = if (isLayoutPressed) 0.96f else 1.0f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    label = "hear_layout_scale"
+                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                        .scale(layoutScale)
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            surfaceColor = if (isLayoutPressed) Color(0xFF1D4ED8) else NeoPrimary,
+                            lightColor = Color(0x6693C5FD),
+                            darkColor = Color(0x661E3A8A),
+                            borderColor = Color(0xFF3B82F6),
+                            elevation = 3.dp,
+                            isPressed = isLayoutPressed,
+                            cornerRadius = 12.dp
+                        )
+                        .clickable(
+                            interactionSource = layoutInteraction,
+                            indication = null,
+                            onClick = {
+                                hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                earconEngine.play(EarconType.ORDER_CONFIRMED)
+                                val overview = LayoutNarrator.generateLayoutSummary(restaurantName, sections, itemsBySection, selectedLanguage)
+                                onSpeakNarration(overview)
+                            }
+                        )
+                        .semantics {
+                            contentDescription = "Hear Menu Layout"
+                            role = Role.Button
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                             contentDescription = null,
                             tint = NeoOnPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Hear Menu Layout",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoOnPrimary
                         )
                     }
-                )
+                }
 
-                AccessibleButton(
-                    text = "Voice Cart",
-                    onClick = {
-                        hapticEngine.trigger(HapticPattern.CLICK)
-                        onStopNarration()
-                        onOpenCart()
-                    },
-                    modifier = Modifier.weight(1f),
-                    isPrimary = false,
-                    leadingIcon = {
+                // Voice Cart (Secondary)
+                val cartInteraction = remember { MutableInteractionSource() }
+                val isCartPressed by cartInteraction.collectIsPressedAsState()
+                val cartScale by animateFloatAsState(
+                    targetValue = if (isCartPressed) 0.96f else 1.0f,
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    label = "voice_cart_scale"
+                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp)
+                        .scale(cartScale)
+                        .neomorphicSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            surfaceColor = if (isCartPressed) NeoSurfacePressed else NeoSurface,
+                            elevation = 3.dp,
+                            isPressed = isCartPressed,
+                            cornerRadius = 12.dp
+                        )
+                        .clickable(
+                            interactionSource = cartInteraction,
+                            indication = null,
+                            onClick = {
+                                hapticEngine.trigger(HapticPattern.CLICK)
+                                onStopNarration()
+                                onOpenCart()
+                            }
+                        )
+                        .semantics {
+                            contentDescription = "Voice Cart"
+                            role = Role.Button
+                        }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
                         Icon(
                             imageVector = Icons.Default.ShoppingCart,
                             contentDescription = null,
                             tint = NeoTextPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Voice Cart",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeoTextPrimary
                         )
                     }
-                )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
