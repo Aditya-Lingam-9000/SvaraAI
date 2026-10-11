@@ -1107,6 +1107,7 @@ fun MainAudioPlaygroundScreen(
                                             is Result.Success -> {
                                                 val aiResp = intentResult.data
                                                 structuredAiResponse = aiResp
+                                                currentSpokenCaption = aiResp.caption.ifBlank { aiResp.spoken }
                                                 // Step 3: Directly synthesize the AI's natural spoken response
                                                 playSampleText(aiResp.spoken, selectedLanguage)
                                             }
@@ -1116,6 +1117,7 @@ fun MainAudioPlaygroundScreen(
                                                     "hi" -> "आपके $rawTranscript को ऑर्डर में जोड़ दिया गया है। क्या आप कुछ और लेना चाहेंगे?"
                                                     else -> "I have added $rawTranscript to your order. Would you like anything else?"
                                                 }
+                                                currentSpokenCaption = fallbackText
                                                 playSampleText(fallbackText, selectedLanguage)
                                             }
                                             else -> {}

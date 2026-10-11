@@ -154,7 +154,7 @@ fun MenuBrowserScreen(
                     isAiProcessing = false
                     if (aiRes is Result.Success) {
                         val resp = aiRes.data
-                        liveCaptionText = resp.caption
+                        liveCaptionText = resp.caption.ifBlank { resp.spoken }
                         onSpeakNarration(resp.spoken)
 
                         for (action in resp.actions) {
@@ -167,6 +167,26 @@ fun MenuBrowserScreen(
                                 "FILTER_JAIN" -> {
                                     filterJainOnly = true
                                     filterVegOnly = true
+                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                }
+                                "ANSWER_DIETARY" -> {
+                                    val target = action.payload.orEmpty().trim()
+                                    if (target.isNotBlank()) {
+                                        val matched = allItems.firstOrNull { m ->
+                                            m.nameEnglish.contains(target, ignoreCase = true) ||
+                                            target.contains(m.nameEnglish, ignoreCase = true) ||
+                                            m.itemId.equals(target, ignoreCase = true) ||
+                                            (m.nameTelugu != null && (m.nameTelugu.contains(target, ignoreCase = true) || target.contains(m.nameTelugu, ignoreCase = true))) ||
+                                            (m.nameHindi != null && (m.nameHindi.contains(target, ignoreCase = true) || target.contains(m.nameHindi, ignoreCase = true)))
+                                        }
+                                        if (matched != null) {
+                                            highlightedItemId = matched.itemId
+                                            val secIdx = sections.indexOfFirst { it.sectionId == matched.sectionId }
+                                            if (secIdx >= 0) {
+                                                selectedSectionIndex = secIdx
+                                            }
+                                        }
+                                    }
                                     hapticEngine.trigger(HapticPattern.CONFIRMATION)
                                 }
                                 "HIGHLIGHT_ITEM" -> {

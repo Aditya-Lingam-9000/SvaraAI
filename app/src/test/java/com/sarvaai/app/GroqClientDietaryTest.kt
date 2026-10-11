@@ -251,6 +251,175 @@ class GroqClientDietaryTest {
     }
 
     @Test
+    fun testCulinaryExplanationChilliChicken() {
+        val response = groqClient.generateLocalDietaryResponse(
+            userQuery = "What is chilli chicken?",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertEquals("DIETARY_QUERY", response.intent)
+        assertTrue(response.spoken.contains("Indo-Chinese") || response.spoken.contains("crispy fried chicken"))
+        assertTrue(response.spoken.contains("green chilies") || response.spoken.contains("soy sauce"))
+        assertNotNull(response.table)
+    }
+
+    @Test
+    fun testCulinaryExplanationChicken65() {
+        val response = groqClient.generateLocalDietaryResponse(
+            userQuery = "What is chicken 65?",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertEquals("DIETARY_QUERY", response.intent)
+        assertTrue(response.spoken.contains("Chennai") || response.spoken.contains("South Indian"))
+        assertTrue(response.spoken.contains("curry leaves") || response.spoken.contains("fiery"))
+    }
+
+    @Test
+    fun testCulinaryExplanationBiryaniPreparation() {
+        val response = groqClient.generateLocalDietaryResponse(
+            userQuery = "How is biryani prepared?",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertEquals("DIETARY_QUERY", response.intent)
+        assertTrue(response.spoken.contains("basmati") || response.spoken.contains("slow-cooked") || response.spoken.contains("dum"))
+    }
+
+    @Test
+    fun testCulinaryExplanationRasam() {
+        val response = groqClient.generateLocalDietaryResponse(
+            userQuery = "What is rasam?",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertEquals("DIETARY_QUERY", response.intent)
+        assertTrue(response.spoken.contains("tamarind") || response.spoken.contains("black pepper") || response.spoken.contains("soup"))
+    }
+
+    @Test
+    fun testCulinaryExplanationFishCurrySpiciness() {
+        val response = groqClient.generateLocalDietaryResponse(
+            userQuery = "Is fish curry spicy?",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertEquals("DIETARY_QUERY", response.intent)
+        assertTrue(response.spoken.contains("Fish Curry") || response.spoken.contains("coastal"))
+        assertTrue(response.spoken.contains("2/3") || response.spoken.contains("spicy") || response.spoken.contains("tamarind"))
+    }
+
+    @Test
+    fun testCulinaryExplanationMultilingualTelugu() {
+        // Telugu: Chilli Chicken & Rasam
+        val resTe1 = groqClient.generateLocalDietaryResponse(
+            userQuery = "చిల్లీ చికెన్ అంటే ఏమిటి?",
+            language = "te",
+            restaurantName = "స్వాగత్",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals("DIETARY_QUERY", resTe1.intent)
+        assertTrue(resTe1.spoken.contains("ఇండో-చైనీస్") || resTe1.spoken.contains("చికెన్"))
+
+        val resTe2 = groqClient.generateLocalDietaryResponse(
+            userQuery = "రసం అంటే ఏమిటి?",
+            language = "te",
+            restaurantName = "స్వాగత్",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals("DIETARY_QUERY", resTe2.intent)
+        assertTrue(resTe2.spoken.contains("చింతపండు") || resTe2.spoken.contains("మిరియాలు") || resTe2.spoken.contains("రసం"))
+    }
+
+    @Test
+    fun testCulinaryExplanationMultilingualHindi() {
+        // Hindi: Chilli Chicken & Biryani
+        val resHi1 = groqClient.generateLocalDietaryResponse(
+            userQuery = "चिल्ली चिकन क्या है?",
+            language = "hi",
+            restaurantName = "स्वाद",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals("DIETARY_QUERY", resHi1.intent)
+        assertTrue(resHi1.spoken.contains("इंडो-चाइनीज") || resHi1.spoken.contains("चिकन"))
+
+        val resHi2 = groqClient.generateLocalDietaryResponse(
+            userQuery = "बिरयानी कैसे बनती है?",
+            language = "hi",
+            restaurantName = "स्वाद",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals("DIETARY_QUERY", resHi2.intent)
+        assertTrue(resHi2.spoken.contains("बासमती") || resHi2.spoken.contains("दम") || resHi2.spoken.contains("बिरयानी"))
+    }
+
+    @Test
+    fun testStrictGuardrailsForNonFoodQueries() {
+        // English non-food coding query
+        val resCodeEn = groqClient.generateLocalDietaryResponse(
+            userQuery = "Write a python function to sort an array",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals(GroqClient.REDIRECTION_EN, resCodeEn.spoken)
+
+        // English non-food math query
+        val resMathEn = groqClient.generateLocalDietaryResponse(
+            userQuery = "What is the square root of 144?",
+            language = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals(GroqClient.REDIRECTION_EN, resMathEn.spoken)
+
+        // Hindi politics non-food query
+        val resPolHi = groqClient.generateLocalDietaryResponse(
+            userQuery = "प्रधानमंत्री कौन है?",
+            language = "hi",
+            restaurantName = "स्वाद",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals(GroqClient.REDIRECTION_HI, resPolHi.spoken)
+
+        // Telugu election non-food query
+        val resElecTe = groqClient.generateLocalDietaryResponse(
+            userQuery = "రాష్ట్రంలో ఎన్నికలు ఎప్పుడు?",
+            language = "te",
+            restaurantName = "స్వాగత్",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+        assertEquals(GroqClient.REDIRECTION_TE, resElecTe.spoken)
+
+        // Multilingual response method guardrail
+        val resMulti = groqClient.generateLocalMultilingualResponse("Write javascript code for login", "en")
+        assertEquals(GroqClient.REDIRECTION_EN, resMulti.spoken)
+    }
+
+    @Test
     fun testProcessMenuDietaryQaCoroutineExecution() = runBlocking {
         val result = groqClient.processMenuDietaryQa(
             userQuery = "Is the paneer butter masala vegetarian or does it contain nuts / cashews?",
@@ -266,4 +435,38 @@ class GroqClientDietaryTest {
         assertTrue(structured.spoken.isNotBlank())
         assertTrue(structured.actions.isNotEmpty())
     }
+
+    @Test
+    fun testProcessMenuDietaryQaDishQueryChilliChicken() = runBlocking {
+        val result = groqClient.processMenuDietaryQa(
+            userQuery = "What is chilli chicken?",
+            userLanguage = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertTrue(result is Result.Success)
+        val structured = (result as Result.Success).data
+        assertEquals("DIETARY_QUERY", structured.intent)
+        assertTrue(structured.spoken.isNotBlank())
+        assertTrue(structured.headline.isNotBlank())
+    }
+
+    @Test
+    fun testProcessMenuDietaryQaDishQueryPesarattu() = runBlocking {
+        val result = groqClient.processMenuDietaryQa(
+            userQuery = "What is Pesarattu?",
+            userLanguage = "en",
+            restaurantName = "Saravana Bhavan",
+            menuItems = sampleMenuItems,
+            sections = sampleSections
+        )
+
+        assertTrue(result is Result.Success)
+        val structured = (result as Result.Success).data
+        assertEquals("DIETARY_QUERY", structured.intent)
+        assertTrue(structured.spoken.isNotBlank())
+    }
 }
+
