@@ -43,19 +43,129 @@ Rather than relying on a generic accessibility switch, SvaraAI actively infers u
 
 ---
 
-## 🔄 The Bhashini Speech-to-Speech Pipeline
+## 🏗️ Deep Technical System Architecture
 
-SvaraAI is built on an end-to-end multi-stage pipeline:
-$$\text{Speech / Camera Input} \longrightarrow \text{Bhashini ASR / OCR} \longrightarrow \text{Bhashini NMT} \longrightarrow \text{AI Reasoning} \longrightarrow \text{Bhashini NMT} \longrightarrow \text{Bhashini TTS}$$
+SvaraAI operates on a multi-tier, hybrid edge-cloud distributed architecture combining real-time on-device sensory processing with sovereign Indian AI cloud pipelines:
 
 ```mermaid
-graph TD
-    A["Diner Input: Voice (16kHz PCM) or Camera (CameraX)"] --> B["Bhashini ASR (AI4Bharat Conformer) / ML Kit OCR"]
-    B --> C["Bhashini NMT (IndicTrans2: Native -> English)"]
-    C --> D["Groq LLaMA 3.3 70B Reasoning & Live Culinary Search"]
-    D --> E["Bhashini NMT (IndicTrans2: English -> Native Target)"]
-    E --> F["Bhashini TTS (IIT Madras / FastSpeech2 Neural Audio)"]
-    F --> G["Live Multilingual Output: Spoken Speech + Live Captions"]
+flowchart TD
+    %% SUBGRAPH 1: INPUT INGESTION & EDGE PERCEPTION
+    subgraph LAYER_1["1. SENSORY INGESTION & EDGE PERCEPTION LAYER"]
+        direction TB
+        MIC["Android AudioRecord\n16kHz 16-bit Mono PCM Stream"] --> VAD["Energy-Based VAD (EnergyVad.kt)\nDynamic RMS Noise Floor + 60ms Energy Hold"]
+        VAD --> SUPPRESS["DoubleSpeechSuppressor.kt\nHardware AEC + Earcon Acoustic Ducking"]
+        
+        CAM["CameraX 1.4.0 Engine\n3:4 Portrait YUV_420_888 Capture"] --> COACH["AuditoryCoachingEngine.kt\nReal-Time Spatial Vector Guidance"]
+        CAM --> OCR_LOCAL["Google ML Kit Vision (On-Device)\nSpatial Bounding-Box Line Clustering"]
+    end
+
+    %% SUBGRAPH 2: NORMALIZATION & INFERENCE ENGINE
+    subgraph LAYER_2["2. EDGE CONDITION INFERENCE & LEXICAL NORMALIZATION"]
+        direction TB
+        SIG_COLLECT["SignalCollector.kt\nAuditory / Visual / Touch Behavioral Telemetry"] --> COND_INFER["ProfileInferenceEngine.kt\nInfers: Visual / Hearing / Speech Impairment"]
+        SUPPRESS --> NORMALIZER["RestaurantLexicalNormalizer.kt\nPhonetic Regex & Indic Culinary Collision Fixer"]
+        OCR_LOCAL --> NORMALIZER
+    end
+
+    %% SUBGRAPH 3: BHASHINI INDIC AI CLOUD
+    subgraph LAYER_3["3. BHASHINI INDIC AI CLOUD ECOSYSTEM (Govt. of India)"]
+        direction TB
+        NORMALIZER -->|"16kHz Audio Chunks"| BHASHINI_ASR["Bhashini ASR Pipeline (AI4Bharat Conformer)\n6 Languages: TE, HI, TA, KN, ML, EN"]
+        BHASHINI_ASR -->|"Recognized Dialect Text"| BHASHINI_NMT_IN["Bhashini NMT Pipeline (IndicTrans2)\nNative Dialect -> Pivot Semantic English"]
+        
+        BHASHINI_NMT_OUT["Bhashini NMT Pipeline (IndicTrans2)\nEnglish Reasoning -> Target Dialect (Diner / Staff)"] --> BHASHINI_TTS["Bhashini TTS Pipeline (IIT Madras / FastSpeech2)\n48kHz High-Fidelity Indic Neural Audio Synthesis"]
+        BHASHINI_TTS -->|"TTS Fallback (<1800ms timeout)"| NATIVE_TTS["Android Native TextToSpeech Engine\nOn-Device Local Language Engine"]
+    end
+
+    %% SUBGRAPH 4: COGNITIVE REASONING & KNOWLEDGE RETRIEVAL
+    subgraph LAYER_4["4. COGNITIVE REASONING & KNOWLEDGE RETRIEVAL LAYER"]
+        direction TB
+        BHASHINI_NMT_IN --> ROUTER{"Deterministic Intent Router\n(DialogueManager.kt)"}
+        
+        ROUTER -->|"Dietary Inquiry / Dish Q&A"| DIET_GUARD["Dietary & Allergen Guard Engine\nJain Roots / Nut-Free / Vegan Rule Validator"]
+        ROUTER -->|"Menu Vision Extraction"| LLM_STRUCT["Groq Cloud LLaMA 3.3 70B Versatile\nZero-Shot JSON Menu Schema Structuring"]
+        ROUTER -->|"Dishes Comparison"| COMP_ENGINE["Compare Dishes Matrix Engine\nSpice Heat Flames (0-3) & Price Delta %"]
+        
+        DIET_GUARD <--> LIVE_WEB["CulinaryWebSearchClient.kt\nDuckDuckGo Instant + Wikipedia REST (2.5s Timeout)"]
+        DIET_GUARD <--> LOCAL_ENCYCLOPEDIA["Local Culinary Encyclopedia\n21 Pre-Cached Signature Dish Profiles"]
+        
+        LLM_STRUCT --> BHASHINI_NMT_OUT
+        DIET_GUARD --> BHASHINI_NMT_OUT
+        COMP_ENGINE --> BHASHINI_NMT_OUT
+    end
+
+    %% SUBGRAPH 5: EDGE STATE & DETERMINISTIC BUSINESS LOGIC
+    subgraph LAYER_5["5. LOCAL DATA, TRANSACTION & GST TAX LAYER"]
+        direction TB
+        ROUTER -->|"Cart Mutation / Order"| CART_DAO["Room SQLite CartDao\nPersistent Multi-Item Order Storage"]
+        ROUTER -->|"Menu Query"| MENU_DAO["Room SQLite MenuDao\nStructured Categories, Items & Native Script"]
+        
+        CART_DAO --> GST_ENGINE["Statutory Indian Tax Engine\nInteger-Paise CGST 2.5% + SGST 2.5% Breakdown"]
+        GST_ENGINE --> NUMBER_VERBALIZER["Indic NumberVerbalizer.kt\nSpoken Monetary Words (₹ / Paise) in 6 Languages"]
+        NUMBER_VERBALIZER --> BHASHINI_NMT_OUT
+    end
+
+    %% SUBGRAPH 6: ADAPTIVE MULTIMODAL OUTPUT LAYER
+    subgraph LAYER_6["6. ADAPTIVE ACCESSIBLE OUTPUT DELIVERY LAYER"]
+        direction TB
+        COND_INFER -.->|"Adaptive Tuning"| DISP_ADAPT["Dynamic UI / Sound / Haptic Adaptor"]
+        
+        BHASHINI_TTS --> WSOLA["Pitch-Preserving WSOLA Audio Processor\nExoPlayer Sonic Engine: 0.8x to 1.5x Playback"]
+        WSOLA --> AUDIO_OUT["Acoustic Playback\nSpeechPlayer + EarconEngine (Triad Cues)"]
+        
+        BHASHINI_NMT_OUT --> CAPTIONS["Synchronized Live Captions Bar\nReal-Time Indic Transcripts (Hearing-Impaired)"]
+        BHASHINI_NMT_OUT --> FLIP_CARD["Tabletop 180° Flip Card\nOutward-Facing Waitstaff Screen (Speech-Impaired)"]
+        ROUTER --> HAPTIC["HapticFeedbackEngine.kt\nAndroid R Primitives: CONFIRMATION / ERROR"]
+        
+        DISP_ADAPT --> UI_CANVAS["Neomorphic White Surface Canvas\nDual-Bevel Specular Physics, Zero Emojis"]
+    end
+```
+
+---
+
+## 🔄 The End-to-End Speech-to-Speech & Vision Execution Pipeline
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Diner as Visually / Speech Impaired Diner
+    participant App as SvaraAI Edge Client (Android 15)
+    participant Bhashini as Bhashini Cloud (ASR / NMT / TTS)
+    participant Groq as Groq LLaMA 3.3 70B & Live Web
+    participant Staff as Restaurant Waitstaff / Tabletop
+
+    %% STEP 1: VOICE DIETARY / ORDER INGESTION
+    Note over Diner, App: Phase 1: Acoustic Ingestion & Edge Conditioning
+    Diner->>App: Speaks: "ఈ పనీర్ బటర్ మసాలాలో జీడిపప్పు ఉందా?" (Telugu)
+    App->>App: 16kHz PCM Stream -> Energy VAD detects voice end (1500ms silence)
+    App->>App: RestaurantLexicalNormalizer cleans Indic phonetics & dish tokens
+    
+    %% STEP 2: BHASHINI ASR & NMT
+    Note over App, Bhashini: Phase 2: Sovereign Speech Recognition & Pivot Translation
+    App->>Bhashini: POST /ai4bharat/conformer/asr (Telugu 16kHz WAV)
+    Bhashini-->>App: Transcript: "ఈ పనీర్ బటర్ మసాలాలో జీడిపప్పు ఉందా?"
+    App->>Bhashini: POST /indictrans2/nmt (Source: te -> Target: en)
+    Bhashini-->>App: Pivot English: "Does this Paneer Butter Masala contain cashews?"
+
+    %% STEP 3: COGNITIVE REASONING & KNOWLEDGE SEARCH
+    Note over App, Groq: Phase 3: Culinary Intelligence & Guardrail Check
+    App->>Groq: JSON Prompt: Dietary verification against Menu items
+    Groq->>Groq: Evaluates gravy base: Cashew paste (kaju) + Butter present
+    Groq-->>App: JSON Output: {isNutFree: false, allergens: ["cashew"], spice: 2}
+
+    %% STEP 4: TRANSLATION & NEURAL SYNTHESIS
+    Note over App, Bhashini: Phase 4: Pivot Translation to Native Dialect & Neural Audio
+    App->>Bhashini: POST /indictrans2/nmt (Source: en -> Target: te)
+    Bhashini-->>App: Telugu: "పనీర్ బటర్ మసాలాలో జీడిపప్పు పేస్ట్ ఉంది. ఇది గింజల రహితం కాదు."
+    App->>Bhashini: POST /iitm/indic-tts (Telugu neural voice)
+    Bhashini-->>App: 48kHz Synthesized Audio Stream
+
+    %% STEP 5: MULTIMODAL ACCESSIBLE PRESENTATION
+    Note over App, Staff: Phase 5: Synchronized Multimodal Delivery
+    App->>Diner: Spoken narration via WSOLA (speed: 1.0x) + Haptic turn cue
+    App->>Diner: Synchronized Live Caption displays Telugu transcript
+    App->>Diner: Highlights "Paneer Butter Masala" on menu screen with Allergen Alert
+    App->>Staff: Waiter Bridge displays translated Hindi card + 180° Flip for staff
 ```
 
 ### Core Pipeline Capabilities:
