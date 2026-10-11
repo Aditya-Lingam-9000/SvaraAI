@@ -1,6 +1,11 @@
 package com.sarvaai.app
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -26,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +40,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import com.sarvaai.app.adapt.inference.ProfileInferenceEngine
+import com.sarvaai.app.adapt.signals.SignalCollector
 import com.sarvaai.app.audio.earcons.EarconEngine
 import com.sarvaai.app.audio.earcons.EarconType
 import com.sarvaai.app.audio.haptics.HapticFeedbackEngine
@@ -47,24 +55,18 @@ import com.sarvaai.app.bhashini.asr.AsrNmtClient
 import com.sarvaai.app.bhashini.matrix.CapabilityMatrix
 import com.sarvaai.app.bhashini.models.IngestionResult
 import com.sarvaai.app.bhashini.tts.BhashiniTtsClient
+import com.sarvaai.app.core.config.ApiKeyManager
 import com.sarvaai.app.core.result.Result
 import com.sarvaai.app.data.db.AppDatabase
-import com.sarvaai.app.ui.components.*
-import com.sarvaai.app.ui.theme.*
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-
-import androidx.compose.ui.platform.LocalContext
-import com.sarvaai.app.core.config.ApiKeyManager
-import com.sarvaai.app.adapt.inference.ProfileInferenceEngine
-import com.sarvaai.app.adapt.signals.SignalCollector
+import com.sarvaai.app.data.entities.CartItemEntity
 import com.sarvaai.app.data.entities.MenuItemEntity
 import com.sarvaai.app.data.entities.MenuSectionEntity
 import com.sarvaai.app.llm.GroqClient
 import com.sarvaai.app.llm.models.StructuredAiResponse
 import com.sarvaai.app.menu.extractor.MenuExtractor
-import com.sarvaai.app.data.entities.CartItemEntity
+import com.sarvaai.app.service.wakeword.SvaraWakeWordService
+import com.sarvaai.app.service.wakeword.WakeWordDetector
+import com.sarvaai.app.ui.components.*
 import com.sarvaai.app.ui.screens.bill.SmartBillSplitScreen
 import com.sarvaai.app.ui.screens.browser.MenuBrowserScreen
 import com.sarvaai.app.ui.screens.camera.CameraXMenuCaptureScreen
@@ -72,6 +74,11 @@ import com.sarvaai.app.ui.screens.cart.VoiceOrderingCartScreen
 import com.sarvaai.app.ui.screens.debug.DebugSignalPanel
 import com.sarvaai.app.ui.screens.debug.RawVsAccessibleDebugView
 import com.sarvaai.app.ui.screens.waiter.WaiterBridgeScreen
+import com.sarvaai.app.ui.theme.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 enum class AppScreen {
@@ -86,6 +93,17 @@ enum class AppScreen {
 }
 
 class MainActivity : ComponentActivity() {
+
+    private val closeAppReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action
+            if (action == WakeWordDetector.ACTION_CLOSE_APP || action == SvaraWakeWordService.ACTION_STOP_SERVICE) {
+                Log.i("MainActivity", "Close app broadcast received ($action). Terminating application...")
+                finishAndRemoveTask()
+                finishAffinity()
+            }
+        }
+    }
 
     private lateinit var hapticEngine: HapticFeedbackEngine
     private lateinit var earconEngine: EarconEngine
@@ -102,6 +120,8 @@ class MainActivity : ComponentActivity() {
     private var activeSpeechJob: Job? = null
     private var androidTts: android.speech.tts.TextToSpeech? = null
 
+    private var autoStartListeningTrigger by mutableStateOf(0)
+
     private fun stopGlobalSpeech() {
         activeSpeechJob?.cancel()
         activeSpeechJob = null
@@ -113,9 +133,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, false) ||
+            intent.getBooleanExtra("EXTRA_AUTO_START_LISTENING", false)) {
+            Log.i("MainActivity", "onNewIntent received EXTRA_AUTO_START_LISTENING")
+            autoStartListeningTrigger++
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Register Close App Broadcast Receiver
+        val filter = IntentFilter(WakeWordDetector.ACTION_CLOSE_APP).apply {
+            addAction(SvaraWakeWordService.ACTION_STOP_SERVICE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(closeAppReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(closeAppReceiver, filter)
+        }
+
+        // Start Wake-Word Continuous Foreground Service
+        SvaraWakeWordService.startService(this)
 
         hapticEngine = HapticFeedbackEngine(this)
         earconEngine = EarconEngine(this)
@@ -140,6 +183,12 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             Log.w("MainActivity", "Native TTS init: ${e.message}")
+        }
+
+        if (intent?.getBooleanExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, false) == true ||
+            intent?.getBooleanExtra("EXTRA_AUTO_START_LISTENING", false) == true) {
+            Log.i("MainActivity", "onCreate received EXTRA_AUTO_START_LISTENING")
+            autoStartListeningTrigger++
         }
 
         setContent {
@@ -216,12 +265,17 @@ class MainActivity : ComponentActivity() {
                             speechSuppressor = speechSuppressor,
                             isHighContrast = isHighContrast,
                             selectedLanguage = selectedLanguage,
+                            autoStartListeningTrigger = autoStartListeningTrigger,
                             onLanguageSelected = { selectedLanguage = it },
                             onOpenScreen = {
                                 stopSpeech()
                                 currentScreen = it
                             },
-                            onToggleHighContrast = { isHighContrast = !isHighContrast }
+                            onToggleHighContrast = { isHighContrast = !isHighContrast },
+                            onCloseApp = {
+                                finishAndRemoveTask()
+                                finishAffinity()
+                            }
                         )
                     }
 
@@ -411,6 +465,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(closeAppReceiver)
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Receiver unregister: ${e.message}")
+        }
         stopGlobalSpeech()
         if (::audioRecorder.isInitialized) {
             audioRecorder.release()
@@ -436,12 +495,15 @@ fun MainAudioPlaygroundScreen(
     speechSuppressor: DoubleSpeechSuppressor,
     isHighContrast: Boolean,
     selectedLanguage: String,
+    autoStartListeningTrigger: Int = 0,
     onLanguageSelected: (String) -> Unit,
     onOpenScreen: (AppScreen) -> Unit,
-    onToggleHighContrast: () -> Unit
+    onToggleHighContrast: () -> Unit,
+    onCloseApp: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val isRecording by audioRecorder.isRecording.collectAsState()
     val vadStatus by audioRecorder.vadStatus.collectAsState()
@@ -453,6 +515,7 @@ fun MainAudioPlaygroundScreen(
     val playbackSpeed by speechPlayer.playbackSpeed.collectAsState()
 
     var isProcessing by remember { mutableStateOf(false) }
+    var isWakeWordServiceRunning by remember { mutableStateOf(true) }
     var ingestionResult by remember { mutableStateOf<IngestionResult?>(null) }
     var structuredAiResponse by remember { mutableStateOf<StructuredAiResponse?>(null) }
     var currentSpokenCaption by remember { mutableStateOf("") }
@@ -553,6 +616,105 @@ fun MainAudioPlaygroundScreen(
                 }
             }
             isProcessing = false
+        }
+    }
+
+    fun startListeningFlow() {
+        if (!isRecording) {
+            speechPlayer.stop()
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
+            earconEngine.play(EarconType.LISTEN_START)
+            errorMessage = null
+            audioRecorder.startRecording(
+                onUtteranceComplete = { wavBytes ->
+                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                    earconEngine.play(EarconType.LISTEN_STOP)
+                    isProcessing = true
+                    scope.launch {
+                        // Step 1: Ingestion (ASR)
+                        val res = asrNmtClient.transcribeAndTranslate(wavBytes, selectedLanguage)
+                        when (res) {
+                            is Result.Success -> {
+                                ingestionResult = res.data
+                                errorMessage = null
+
+                                val rawTranscript = res.data.originalTranscript.trim()
+                                if (rawTranscript.isNotBlank() && rawTranscript.any { it.isLetterOrDigit() }) {
+                                    // Voice Exit / Shutdown Command Detection
+                                    if (WakeWordDetector.isCloseCommand(rawTranscript)) {
+                                        val goodbyeText = WakeWordDetector.getGoodbyeMessage(selectedLanguage)
+                                        currentSpokenCaption = goodbyeText
+                                        earconEngine.play(EarconType.LISTEN_STOP)
+                                        hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                        playSampleText(goodbyeText, selectedLanguage)
+                                        scope.launch {
+                                            delay(1800L)
+                                            onCloseApp()
+                                        }
+                                    } else {
+                                        // Step 2: Intelligent Multilingual Intent & Conversational Reasoning
+                                        val intentResult = groqClient.processSpeechIntent(rawTranscript, selectedLanguage)
+                                        when (intentResult) {
+                                            is Result.Success -> {
+                                                val aiResp = intentResult.data
+                                                structuredAiResponse = aiResp
+                                                // Step 3: Directly synthesize the AI's natural spoken response in customer's language
+                                                playSampleText(aiResp.spoken, selectedLanguage)
+                                            }
+                                            is Result.Error -> {
+                                                val fallbackText = when (selectedLanguage) {
+                                                    "te" -> "మీ $rawTranscript ఆర్డర్‌లో చేర్చాను. ఇంకా ఏమైనా కావాలా?"
+                                                    "hi" -> "आपके $rawTranscript को ऑर्डर में जोड़ दिया गया है। क्या आप कुछ और लेना चाहेंगे?"
+                                                    else -> "I have added $rawTranscript to your order. Would you like anything else?"
+                                                }
+                                                playSampleText(fallbackText, selectedLanguage)
+                                            }
+                                            else -> {}
+                                        }
+                                    }
+                                } else {
+                                    val noSpeechText = when (selectedLanguage) {
+                                        "te" -> "క్షమించండి, మీ మాటలు వినపడలేదు. దయచేసి మళ్ళీ మాట్లాడండి."
+                                        "hi" -> "माफ़ कीजिए, आवाज़ स्पष्ट नहीं थी। कृपया फिर से बोलें।"
+                                        else -> "I could not hear any speech clearly. Please try speaking again."
+                                    }
+                                    playSampleText(noSpeechText, selectedLanguage)
+                                }
+                            }
+                            is Result.Error -> {
+                                isProcessing = false
+                                errorMessage = res.message
+                                hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                                earconEngine.play(EarconType.ERROR_ALERT)
+                            }
+                            else -> {
+                                isProcessing = false
+                            }
+                        }
+                    }
+                },
+                onError = { err ->
+                    errorMessage = err
+                    hapticEngine.trigger(HapticPattern.ERROR_ALERT)
+                    earconEngine.play(EarconType.ERROR_ALERT)
+                }
+            )
+        } else {
+            audioRecorder.stopRecording()
+            earconEngine.play(EarconType.LISTEN_STOP)
+            hapticEngine.trigger(HapticPattern.CLICK)
+        }
+    }
+
+    // Auto-Start Listening Trigger when awakened by 'Hey Svara' or Voice Intent
+    LaunchedEffect(autoStartListeningTrigger) {
+        if (autoStartListeningTrigger > 0) {
+            val listeningGreeting = WakeWordDetector.getListeningMessage(selectedLanguage)
+            playSampleText(listeningGreeting, selectedLanguage)
+            if (!isRecording) {
+                startListeningFlow()
+            }
         }
     }
 
@@ -672,6 +834,52 @@ fun MainAudioPlaygroundScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Wake-Word Background Service Status & Control Card
+            AccessibleCard(
+                borderColor = if (isWakeWordServiceRunning) VegGreen else SaffronPrimary
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "🎙️ 'Hey Svara' Wake-Word Service",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PureWhite
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (isWakeWordServiceRunning) "Active in background (Foreground Service)" else "Service stopped",
+                            fontSize = 12.sp,
+                            color = if (isWakeWordServiceRunning) VegGreen else SubtitleText
+                        )
+                    }
+                    Switch(
+                        checked = isWakeWordServiceRunning,
+                        onCheckedChange = { enable ->
+                            isWakeWordServiceRunning = enable
+                            hapticEngine.trigger(HapticPattern.CLICK)
+                            if (enable) {
+                                SvaraWakeWordService.startService(context)
+                            } else {
+                                SvaraWakeWordService.stopService(context)
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = PureWhite,
+                            checkedTrackColor = VegGreen,
+                            uncheckedThumbColor = PureWhite,
+                            uncheckedTrackColor = CharcoalSurfaceVariant
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Language Selector Chips
             Text(
                 text = "Select Speaking & Playback Language",
@@ -781,78 +989,7 @@ fun MainAudioPlaygroundScreen(
                     .background(micButtonColor.copy(alpha = 0.25f))
                     .border(3.dp, micButtonColor, CircleShape)
                     .clickable(enabled = !isProcessing) {
-                        if (!isRecording) {
-                            speechPlayer.stop()
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
-                            earconEngine.play(EarconType.LISTEN_START)
-                            errorMessage = null
-                            audioRecorder.startRecording(
-                                onUtteranceComplete = { wavBytes ->
-                                    hapticEngine.trigger(HapticPattern.CONFIRMATION)
-                                    earconEngine.play(EarconType.LISTEN_STOP)
-                                    isProcessing = true
-                                    scope.launch {
-                                        // Step 1: Ingestion (ASR)
-                                        val res = asrNmtClient.transcribeAndTranslate(wavBytes, selectedLanguage)
-                                        when (res) {
-                                            is Result.Success -> {
-                                                ingestionResult = res.data
-                                                errorMessage = null
-
-                                                val rawTranscript = res.data.originalTranscript.trim()
-                                                if (rawTranscript.isNotBlank() && rawTranscript.any { it.isLetterOrDigit() }) {
-                                                    // Step 2: Intelligent Multilingual Intent & Conversational Reasoning
-                                                    val intentResult = groqClient.processSpeechIntent(rawTranscript, selectedLanguage)
-                                                    when (intentResult) {
-                                                        is Result.Success -> {
-                                                            val aiResp = intentResult.data
-                                                            structuredAiResponse = aiResp
-                                                            // Step 3: Directly synthesize the AI's natural spoken response in customer's language
-                                                            playSampleText(aiResp.spoken, selectedLanguage)
-                                                        }
-                                                        is Result.Error -> {
-                                                            val fallbackText = when (selectedLanguage) {
-                                                                "te" -> "మీ $rawTranscript ఆర్డర్‌లో చేర్చాను. ఇంకా ఏమైనా కావాలా?"
-                                                                "hi" -> "आपके $rawTranscript को ऑर्डर में जोड़ दिया गया है। क्या आप कुछ और लेना चाहेंगे?"
-                                                                else -> "I have added $rawTranscript to your order. Would you like anything else?"
-                                                            }
-                                                            playSampleText(fallbackText, selectedLanguage)
-                                                        }
-                                                        else -> {}
-                                                    }
-                                                } else {
-                                                    val noSpeechText = when (selectedLanguage) {
-                                                        "te" -> "క్షమించండి, మీ మాటలు వినపడలేదు. దయచేసి మళ్ళీ మాట్లాడండి."
-                                                        "hi" -> "माफ़ कीजिए, आवाज़ स्पष्ट नहीं थी। कृपया फिर से बोलें।"
-                                                        else -> "I could not hear any speech clearly. Please try speaking again."
-                                                    }
-                                                    playSampleText(noSpeechText, selectedLanguage)
-                                                }
-                                            }
-                                            is Result.Error -> {
-                                                isProcessing = false
-                                                errorMessage = res.message
-                                                hapticEngine.trigger(HapticPattern.ERROR_ALERT)
-                                                earconEngine.play(EarconType.ERROR_ALERT)
-                                            }
-                                            else -> {
-                                                isProcessing = false
-                                            }
-                                        }
-                                    }
-                                },
-                                onError = { err ->
-                                    errorMessage = err
-                                    hapticEngine.trigger(HapticPattern.ERROR_ALERT)
-                                    earconEngine.play(EarconType.ERROR_ALERT)
-                                }
-                            )
-                        } else {
-                            audioRecorder.stopRecording()
-                            earconEngine.play(EarconType.LISTEN_STOP)
-                            hapticEngine.trigger(HapticPattern.CLICK)
-                        }
+                        startListeningFlow()
                     }
                     .semantics {
                         contentDescription = if (isRecording) "Stop voice recording" else "Start speech interaction in ${selectedLanguage.uppercase()}"
@@ -876,7 +1013,7 @@ fun MainAudioPlaygroundScreen(
                     isRecording && vadStatus == VadStatus.SPEECH_ACTIVE -> "Speech Active (Listening...)"
                     isRecording && vadStatus == VadStatus.CALIBRATING -> "Calibrating ambient noise..."
                     isRecording -> "Listening for voice (VAD active)..."
-                    else -> "Tap microphone for Speech-to-Speech dialogue"
+                    else -> "Tap microphone or say 'Hey Svara' for voice dialogue"
                 },
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -1080,7 +1217,6 @@ fun MainAudioPlaygroundScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            val context = LocalContext.current
             var showApiKeyDialog by remember { mutableStateOf(false) }
             var groqKeyInput by remember { mutableStateOf(ApiKeyManager.getGroqApiKey(context)) }
             val hasValidKey = ApiKeyManager.hasValidGroqKey(context)
