@@ -17,205 +17,247 @@
 
 ## 📖 Executive Overview
 
-**SvaraAI** is an AI-powered, multimodal, accessible dining companion built specifically for the diverse linguistic and physical landscape of Indian restaurants. 
+**SvaraAI** is an AI-powered, multimodal, accessible dining companion engineered specifically for the complex linguistic, dietary, and physical landscape of Indian restaurants. 
 
-In India, dining out presents formidable accessibility challenges:
-- **Visually Impaired Diners** cannot read physical, laminated, or printed menus and must rely on busy waiters or dining companions.
-- **Elderly Diners** struggle with low-contrast, small typography, rapid speech, and complex billing.
-- **Linguistic Divide**: Travelers and diners often speak regional languages (e.g., Telugu, Tamil, Kannada, Malayalam) while restaurant waitstaff frequently speak Hindi or English, resulting in frequent order misunderstandings.
-- **Dietary Strictness**: Strict dietary requirements (Vegetarian, Jain with no root vegetables, Nut allergies) are critical in India, where accidental cross-contamination or hidden cashew gravies pose serious health and cultural concerns.
+In India, dining out presents formidable accessibility barriers:
+- **Visually impaired diners** cannot read physical, laminated, or printed menus and must rely entirely on busy waiters or companions.
+- **Hearing-impaired diners** cannot hear spoken specials or waiter responses in noisy restaurant environments.
+- **Speech-impaired diners or non-native travelers** struggle with speech recognition or language barriers when communicating with restaurant staff who speak different regional languages.
+- **Dietary strictness**: Strict religious, allergen, and cultural requirements (100% Vegetarian, Jain with strict exclusion of root vegetables, Nut allergies) require reliable ingredient transparency without cross-contamination.
 
-**SvaraAI solves all of these challenges** through a combination of **Government of India's Bhashini Indic AI**, **Computer Vision**, **Groq LLaMA 3.3 70B reasoning**, **Live Culinary Knowledge Retrieval**, and a tactile **Neomorphic White Interface**.
+**SvaraAI eliminates these barriers** by pairing **Government of India's Bhashini Indic AI ecosystem** (ASR, NMT, TTS) with **CameraX Spatial OCR**, **Groq LLaMA 3.3 70B reasoning**, **Live Culinary Knowledge Retrieval**, and a tactile **Neomorphic White Interface**.
 
 ---
 
-## 🌟 Key Highlights & Innovations
+## 🏛️ Accessible Conditions & Demonstrable Adaptations
+
+Rather than relying on a generic accessibility switch, SvaraAI actively infers user needs from input modalities, acoustic cues, and direct interactions, delivering specific, demonstrable adaptations for each condition:
+
+| Condition | Barrier in Dining | SvaraAI Demonstrable Adaptation |
+| :--- | :--- | :--- |
+| **Visual** *(Mandatory)* | Cannot see screens, printed menus, images, or prices | **Voice-first operation**: Real-time 16kHz PCM voice control, **Spatial Auditory Blind Framing Coach** (spoken camera orientation: *"Move higher"*, *"Tilt right"*, *"Menu centered"*), automatic screen-reader semantics, acoustic earcons, and continuous spoken menu recitation via **Bhashini TTS**. |
+| **Hearing** | Cannot hear audio, spoken totals, or waiter replies in noisy dining halls | **Live Synchronized Captions & Transcripts**: Every spoken response is displayed simultaneously in live caption bars; **Tabletop 180° Flip Card** for visual waiter interaction; visual confirmation badges and haptic tactile alerts replacing audio cues. |
+| **Speech** | Voice input not recognized or patron is non-verbal | **Visual Phraseboards & Tolerant Multi-Dialect ASR**: 1-tap instant category phraseboard for all dining intents; restaurant lexical normalizers for dialect tolerance; one-touch complaint chips that synthesize voice directly to staff via **Bhashini TTS**. |
+
+> **System Inference**: The system observes user behavior (audio presence, caption usage, touch vs. voice) and dynamically prioritizes multimodal channels so every patron receives a tailored dining experience.
+
+---
+
+## 🔄 The Bhashini Speech-to-Speech Pipeline
+
+SvaraAI is built on an end-to-end multi-stage pipeline:
+$$\text{Speech / Camera Input} \longrightarrow \text{Bhashini ASR / OCR} \longrightarrow \text{Bhashini NMT} \longrightarrow \text{AI Reasoning} \longrightarrow \text{Bhashini NMT} \longrightarrow \text{Bhashini TTS}$$
 
 ```mermaid
 graph TD
-    User["Diner (Voice / Camera / Touch)"] --> TopBar["Neomorphic Dropdown (6 Languages)"]
-    
-    subgraph "Core AI Pipeline"
-        TopBar --> BhashiniASR["Bhashini ASR (AI4Bharat)"]
-        BhashiniASR --> BhashiniNMT["Bhashini NMT (IndicTrans2)"]
-        BhashiniNMT --> GroqLLM["Groq LLaMA 3.3 70B & Live Web Search"]
-        GroqLLM --> BhashiniTTS["Bhashini TTS (IIT Madras / FastSpeech2)"]
-    end
-    
-    subgraph "SvaraAI Modules"
-        GroqLLM --> MenuOCR["CameraX Vision & Spatial Coach"]
-        GroqLLM --> Compare["Smart Dish Comparison (Spice & Price)"]
-        GroqLLM --> Dietary["Dietary & Allergen Guard"]
-        GroqLLM --> OrderHub["Unified Order Hub (Cart, Bridge, Bill)"]
-    end
-    
-    BhashiniTTS --> SpokenOutput["Natural Spoken Speech in Mother Tongue"]
-    OrderHub --> RoomDB["On-Device Room SQLite Database"]
+    A["Diner Input: Voice (16kHz PCM) or Camera (CameraX)"] --> B["Bhashini ASR (AI4Bharat Conformer) / ML Kit OCR"]
+    B --> C["Bhashini NMT (IndicTrans2: Native -> English)"]
+    C --> D["Groq LLaMA 3.3 70B Reasoning & Live Culinary Search"]
+    D --> E["Bhashini NMT (IndicTrans2: English -> Native Target)"]
+    E --> F["Bhashini TTS (IIT Madras / FastSpeech2 Neural Audio)"]
+    F --> G["Live Multilingual Output: Spoken Speech + Live Captions"]
 ```
 
----
-
-## 🚀 End-to-End Feature Walkthrough
-
-### 1. First-Time Launch Onboarding (9 Tactile Sliding Cards)
-When launched for the first time, SvaraAI greets users with an interactive, animated Neomorphic carousel of 9 sliding cards:
-- **Card 1: Voice-First Restaurant Assistant** — Hands-free dining assistance for visually impaired, elderly, and all diners.
-- **Card 2: Bhashini Multi-Indic ASR & TTS** — Voice recognition and natural speech across 6 Indian languages.
-- **Card 3: CameraX Menu Vision Scanner** — AI spatial OCR instantly digitizes physical menus into structured dishes and prices.
-- **Card 4: Smart Dish Comparison Matrix** — Compare dishes side-by-side by spice level, price, and dietary attributes.
-- **Card 5: Dietary & Allergen Safety Guard** — Instant vegetarian, Jain, nut-free ingredient checks and culinary Q&A.
-- **Card 6: Voice Ordering Cart & Tax Engine** — Speak naturally to add items and compute real-time statutory CGST & SGST breakdowns.
-- **Card 7: Multilingual Waiter Bridge** — Cross-language communication between diner and staff with instant TTS.
-- **Card 8: Instant Staff Feedback & Escalation** — Voice-activated feedback or complaint escalation directly to the floor manager/captain.
-- **Card 9: Smart Bill Splitter** — Equal split and item-wise share calculation with spoken verbalization.
-
-*Once completed or skipped, SvaraAI automatically requests necessary runtime permissions (Microphone and Camera) and opens the main dashboard.*
+### Core Pipeline Capabilities:
+1. **True Speech-to-Speech in 6 Indic Languages**: Speak in one Indian language (Telugu, Hindi, Tamil, Kannada, Malayalam, or English) and hear the answer in your native language or translated for the waiter.
+2. **Accessible Outputs**: Real accessible headings, tables and prices described in natural words, synchronized live captions, and pitch-preserving speech speed controls (0.8x to 1.5x).
+3. **Graceful Failure & Network Resilience**: Misrecognized speech or network timeouts prompt polite clarification requests (*"Could you please repeat that?"*), backed by instant on-device offline fallback encyclopedias and Android native TTS.
+4. **Zero Proprietary Hardware**: Runs on standard consumer Android phones (API 26+) with standard microphone and camera hardware.
 
 ---
 
-### 2. High-End Bhashini Indic AI Integration 🇮🇳
-SvaraAI integrates the **Bhashini ecosystem** across the entire dining journey to support **6 Indian languages**:
-1. **Telugu (`te`, తెలుగు)** — *Default*
-2. **Hindi (`hi`, हिन्दी)**
-3. **Tamil (`ta`, தமிழ்)**
-4. **Kannada (`kn`, ಕನ್ನಡ)**
-5. **Malayalam (`ml`, മലയാളം)**
-6. **English (`en`, English)**
-
-#### How Bhashini AI Powers SvaraAI:
-- **Neomorphic Dropdown Language Switcher**: Located on the top bar, allowing diners to instantly toggle their preferred language among all 6 Indic languages in authentic native script.
-- **Bhashini ASR (Automated Speech Recognition)**:
-  - Powered by **AI4Bharat Conformer** models trained on real Indian accents and speech patterns.
-  - Converts spoken queries into accurate text with sub-second latency.
-- **Bhashini NMT (Neural Machine Translation)**:
-  - Powered by **IndicTrans2** models.
-  - Translates seamlessly between any of the 6 diner languages and waitstaff languages in both directions.
-- **Bhashini TTS (Text-to-Speech)**:
-  - Integrated with **IIT Madras Indic-TTS** and **FastSpeech2 48kHz** neural voice engines.
-  - Generates natural, soothing, and culturally authentic speech for menu reading, bill breakdowns, and waiter translations.
-  - Built-in local Android native TTS fallback ensures zero interruption even during intermittent connectivity.
-- **Restaurant Lexical Normalizer**:
-  - Eliminates culinary dialect errors (e.g., prevents generic translators from mistranslating Telugu *"దోశలు"* as *"faults/mistakes"* instead of the dish *"Dosas"*).
-- **Indic Number & Currency Verbalizer**:
-  - Automatically speaks Rupee figures in natural phrasing across all 6 languages (e.g., Telugu *"రెండు వందల యాభై రూపాయలు"*, Hindi *"दो सौ पचास रुपये"*, Tamil *"இருநூற்று ஐம்பது ரூபாய்"*, Kannada *"ಇನ್ನೂರ ಐವತ್ತು ರೂಪಾಯಿ"*, Malayalam *"ഇരുന്നൂറ്റി അൻപത് രൂപ"*).
+## 🍽️ The 6 Core Dining Features (Detailed Breakdown)
 
 ---
 
-### 3. CameraX Menu Vision Scanner & Spatial OCR
-Digitizes multi-page printed or laminated paper menus into accessible, interactive digital menus:
-- **3:4 Portrait Vertical Viewfinder**: Designed with strict boundary containment so the camera feed never bleeds or distorts.
-- **Dual-Engine OCR**: Combines fast on-device Google ML Kit Text Recognition with cloud OCR fallback.
-- **Spatial Auditory Blind Framing Coach**:
-  - Real-time spoken guidance guides visually impaired diners to position the camera accurately:
-    - *"Move camera slightly higher"*
-    - *"Tilt phone slightly right"*
-    - *"Menu page perfectly centered, hold steady"*
-- **Groq LLaMA 3.3 70B Menu Structuring**:
-  - Parses noisy OCR text into structured restaurant sections, dishes, Indic transliterations, prices in Paise, and dietary tags.
-- **Sequential Post-Scan Prompts**:
-  - **First 3 Seconds**: Displays a bottom popup card: `"Ready to Order"` with quick shortcut to view cart.
-  - **Next 2 Seconds**: Transitions to a bottom popup: `"Compare Dishes"` with tagline *"Compare dishes by spice level and price, then order"*, providing a direct gateway into the Compare section.
-
----
-
-### 4. Smart Dish Comparison Engine
-**Tagline**: *"Compare dishes by spice level and price, then order"*
-
-A dedicated section accessible directly from the bottom navigation bar and menu scan prompts:
-- **Side-by-Side Dual Dish Comparison**:
-  - Select any **Dish A** and **Dish B** to see an immediate side-by-side comparison:
-    - **Price Difference**: Visual delta (e.g., *"₹150 (62%) cheaper"*).
-    - **Spice Heat Meter**: 0 to 3 flame rating (Mild, Medium, Spicy, Very Spicy).
-    - **Dietary Class**: Veg / Non-Veg, Jain-friendly status, Nut-free safety.
-    - **Flavor Profile & Ingredients**: Description and culinary origin.
-- **Interactive Filtering & Sorting**:
-  - Filter by Dietary: *All*, *Veg*, *Non-Veg*, *Jain*, *Nut-Free*.
-  - Filter by Spice: *All*, *Mild (0–1)*, *Medium (2)*, *Spicy (3)*.
-  - Sort by Price: *Price Low to High*, *Price High to Low*.
-- **Preloaded Indic Sample Menu**:
-  - If a menu has been scanned, SvaraAI compares the scanned restaurant items.
-  - If no menu is scanned yet, SvaraAI preloads an authentic 8-dish sample menu (*Masala Dosa ₹90, Paneer Butter Masala ₹220, Chilli Chicken ₹240, Hyderabadi Dum Biryani ₹260, Dal Makhani ₹180, Veg Hakka Noodles ₹150, Fish Fry ₹280, Filter Coffee ₹40*).
-- **Direct Ordering**: One-tap "Add to Cart" button with instant haptic confirmation and Room database persistence.
-
----
-
-### 5. Dietary & Allergen Safety Guard with Live Culinary Search
-Answers critical ingredient and culinary questions in natural spoken language:
-- **Spoken Culinary Q&A**:
-  - Diners can ask:
-    - *"Is paneer butter masala Jain or does it have nuts?"*
-    - *"What is chilli chicken?"*
-    - *"How is chicken biryani prepared?"*
-    - *"Is dal makhani dairy-free?"*
-- **Multi-Tier Culinary Intelligence**:
-  - **Groq LLaMA 3.3 70B** culinary reasoning prompt specialized in Indian food preparation.
-  - **Live Free Web Knowledge Retriever**: Integrated DuckDuckGo Instant Answers & Wikipedia REST API (with a 2.5s strict timeout) to fetch live culinary origins and recipes for rare dishes.
-  - **Offline Local Culinary Encyclopedia**: Pre-cached knowledge for 20+ signature North Indian, South Indian, and Indo-Chinese specialties.
-- **Strict Food-Only Guardrails**:
-  - Non-food questions (e.g., politics, coding, math, general trivia) are politely declined and redirected back to dining assistance in all 6 languages.
-- **UI Synchronized Feedback**:
-  - Dynamically highlights queried items on screen (`ANSWER_DIETARY`), auto-scrolls to the section, updates live captions, and speaks the answer aloud.
-
----
-
-### 6. Unified Order & Service Hub
-Consolidates Cart, Waiter Bridge, and Bill into a unified, clean navigation tab:
+### 1. Photograph the Menu and Hear Each Dish Read Aloud
+*Empowering blind, low-vision, and illiterate diners to explore printed paper menus independently.*
 
 ```
-[ Voice Cart ]  |  [ Waiter Bridge ]  |  [ Bill & Split ]
+Camera Viewfinder (3:4 Portrait) ──▶ Auditory Coaching ──▶ Dual OCR ──▶ Groq LLaMA Structuring ──▶ Bhashini TTS Narration
 ```
 
-#### Module A: Voice Ordering Cart & Tax Engine
-- **Natural Voice Ordering**: Say *"Add two masala dosas and one filter coffee"* — SvaraAI parses items and quantities into the cart.
-- **Statutory Indian Tax Breakdown**: Computes statutory CGST (2.5%) and SGST (2.5%) in integer-paise precision to prevent rounding errors.
-- **Spoken Cart Summary**: Verbalizes total cost and tax breakdown using the Indic Number Verbalizer.
-
-#### Module B: Multilingual Waiter Bridge
-- **Sticky Dual-Microphone Action Bar**:
-  - **"Speak to Waiter" (Diner Mic)**: Prominently fixed below the language selector with animated acoustic soundwave bars; never scrolls off-screen.
-  - **"Waiter Response" (Staff Mic)**: Allows staff to speak in their native tongue; translates instantly into diner captions.
-- **Tabletop Flip Card**: Flips the card 180° for easy tabletop reading by waitstaff.
-- **Raise Complaint & Feedback System (Bottom of Bridge)**:
-  - Voice-activated feedback or complaint escalation directly to the floor manager/captain.
-  - **6 Instant Category Chips**:
-    - *"Food is Cold / Reheat"*
-    - *"Delay in Order / Follow Up"*
-    - *"Missing Item from Order"*
-    - *"Too Spicy / Less Spice"*
-    - *"Clean Table / Cutlery Request"*
-    - *"Compliment Chef / Food is Delicious"*
-  - Translates into staff language and speaks aloud via TTS, displaying status badge *"Raised to Floor Manager / Captain"*.
-
-#### Module C: Smart Bill Splitter
-- **Equal Split vs Itemized Split**: Easily split group dining bills by number of diners or by individual item claims.
-- **Spoken Breakdown**: Reads out each diner's exact share in Rupees and Paise.
+#### How It Works:
+1. **Camera Framing & Auditory Coaching**:
+   - The diner points their camera at any paper or laminated menu using the 3:4 portrait vertical viewfinder.
+   - For blind patrons who cannot see the screen, SvaraAI's **Spatial Auditory Framing Coach** provides real-time spoken guidance:
+     - *"Hold phone 8 inches above table."*
+     - *"Camera tilted too far left, align vertically."*
+     - *"Menu in full view, holding steady for capture."*
+2. **Dual-Engine OCR Processing**:
+   - Combines on-device Google ML Kit Text Recognition with spatial line clustering to preserve multi-column restaurant menus without text overlap.
+3. **Groq LLaMA 3.3 70B Menu Structuring**:
+   - Raw OCR text is parsed into structured JSON sections (Starters, Main Course, Breads, Desserts, Beverages), individual dish names, prices in integer Paise, and dietary classification.
+4. **Bhashini TTS Narration**:
+   - As the menu loads, SvaraAI immediately begins reading out each section and dish aloud in the diner's selected mother tongue (Telugu, Hindi, Tamil, Kannada, Malayalam, or English) using **IIT Madras Indic-TTS** / **FastSpeech2**.
+   - Diners can pause, resume, replay, or skip sections using voice commands or the stop button.
+5. **Sequential Post-Scan Prompts**:
+   - **First 3 Seconds**: A bottom popup card displays `"Ready to Order"` with a one-tap shortcut to the cart.
+   - **Next 2 Seconds**: Automatically transitions to `"Compare Dishes"` (*"Compare dishes by spice level and price, then order"*), providing an intuitive gateway into dish comparison.
 
 ---
 
-## 🎨 Neomorphic White Design Philosophy
+### 2. Ask: "Is This Vegetarian, Jain or Nut-Free?"
+*Comprehensive dietary and allergen protection powered by AI culinary reasoning and live web search.*
 
-SvaraAI is built with a custom **Neomorphic White Design System**:
-- **Tactile Depth**: Dual-bevel light and shadow specular reflections create a soft, embossed, physical look.
-- **Clean Palette**: Off-white surface (`#F0F4F8`), Royal Cobalt Blue primary accent (`#2563EB`), and Slate typography (`#0F172A`).
-- **Zero Emojis**: 100% vector Material Icons for maximum semantic clarity and screen-reader accessibility.
-- **Smooth Animations**: Pulse ripples on active microphones, animated waveform bars, and smooth pager transitions.
+```
+Voice Query in Mother Tongue ──▶ Bhashini ASR ──▶ Bhashini NMT ──▶ Dietary Guardrail Reasoner ──▶ Bhashini TTS Spoken Answer
+```
+
+#### How It Works:
+1. **Spoken Dietary Inquiry**:
+   - Diners tap the microphone or speak naturally in any of the 6 languages:
+     - *"Ask: is this vegetarian, Jain or nut-free?"*
+     - *"Is paneer butter masala Jain or does it contain root vegetables?"*
+     - *"Does dal makhani have nuts or cashew paste?"*
+     - *"ఈ వంటకంలో జీడిపప్పు లేదా ఉల్లిపాయలు ఉన్నాయా?"* (Telugu)
+     - *"क्या इस दाल में लहसुन या प्याज है?"* (Hindi)
+2. **Bhashini ASR & NMT Pipeline**:
+   - Transcribes regional voice input with **AI4Bharat Conformer ASR** and translates it into culinary semantic tokens using **Bhashini IndicTrans2 NMT**.
+3. **Ingredient Verification & Dietary Evaluation**:
+   - **Vegetarian**: 100% plant and dairy-based; verifies absence of meat, fish, poultry, egg, and animal rennet.
+   - **Jain Compliance**: Strict vegetarian check that verifies the complete absence of underground root vegetables (onions, garlic, potatoes, carrots, radishes, mushrooms).
+   - **Nut & Allergen Safety**: Scrutinizes gravy bases for hidden cashew paste (*kaju paste*), almond (*badam*), peanut (*singdana/groundnut*), pistachio, and sesame.
+4. **Bhashini TTS & Synchronized Display**:
+   - Generates a spoken answer in the diner's language detailing whether the dish complies with their dietary restrictions and what substitutes are available.
+   - Automatically scrolls the menu browser to the queried item and highlights it on screen (`HIGHLIGHT_ITEM`) with an emerald green or amber dietary badge.
 
 ---
 
-## 🛠️ Architecture & Tech Stack
+### 3. Explain Unfamiliar Dishes and Ingredients Simply
+*Translating complex regional culinary terminology into plain, easy-to-understand explanations.*
 
-| Component | Technology | Role |
-| :--- | :--- | :--- |
-| **Language & Runtime** | Kotlin 2.0.21, Android SDK 35 (Android 15) | Core application platform |
-| **UI Framework** | Jetpack Compose, Material 3, Neomorphic Surface Engine | Reactive accessible user interface |
-| **Local Database** | Room SQLite 2.6.1 | Persistent storage for menus, carts, orders |
-| **Speech Recognition** | **Bhashini ASR (AI4Bharat Conformer)** | Real-time Indian speech-to-text (6 languages) |
-| **Machine Translation**| **Bhashini NMT (IndicTrans2)** | Bidirectional translation between diner & staff |
-| **Speech Synthesis**   | **Bhashini TTS (IIT Madras / FastSpeech2)** | Neural Indic voice narration |
-| **Reasoning Engine**   | **Groq Cloud (LLaMA 3.3 70B Versatile)** | Structured menu parsing, culinary Q&A |
-| **Live Knowledge**     | DuckDuckGo Instant Answers & Wikipedia REST API | Live food knowledge retrieval (2.5s timeout) |
-| **Computer Vision**    | CameraX 1.4.0 + Google ML Kit Text Recognition | Menu camera capture & OCR processing |
-| **Audio Processing**   | Android AudioRecord (16kHz PCM), Energy VAD | Voice activity detection & earcon cues |
+```
+"What is Chilli Chicken?" ──▶ Bhashini ASR ──▶ Live Culinary Web Search + Local Encyclopedia ──▶ Plain Explanation via TTS
+```
+
+#### How It Works:
+1. **Natural Culinary Inquiries**:
+   - Indian menus feature hyper-regional dishes that travelers or non-locals may not recognize (e.g., *Chilli Chicken*, *Chicken 65*, *Rasam*, *Mutton Rogan Josh*, *Bisi Bele Bath*, *Pesarattu*).
+   - Diners can ask: *"What is chilli chicken?"*, *"How is biryani prepared?"*, or *"Tell me about rasam"*.
+2. **Multi-Tier Live Knowledge Retrieval**:
+   - **Groq LLaMA 3.3 70B Specialized Culinary Prompt**: Explains origin, cooking technique, flavor profile, and texture.
+   - **Live Free Web Knowledge Retriever (`CulinaryWebSearchClient`)**: Queries DuckDuckGo Instant Answers & Wikipedia REST API with a strict 2.5-second timeout to retrieve definitions for rare or regional specialties.
+   - **Local Offline Culinary Encyclopedia**: Pre-cached knowledge base covering 20+ signature North Indian, South Indian, and Indo-Chinese dishes for instantaneous offline answers.
+3. **Plain Language Spoken Breakdown**:
+   - Example Explanation for *Chilli Chicken*:
+     > *"Chilli Chicken is a popular Indo-Chinese dish made with crispy batter-fried boneless chicken tossed with green chilies, garlic, soy sauce, and diced bell peppers. It has a spicy, savory, and tangy flavor profile. It is non-vegetarian, dairy-free, nut-free, and has a spice rating of 2 out of 3."*
+4. **Strict Food-Only Guardrails**:
+   - Non-food questions (e.g., politics, coding, mathematics, general trivia) are politely declined and redirected back to dining assistance across all 6 languages:
+     - **English**: *"I am Svara, your restaurant assistant. I can only assist with food, dishes, ingredients, and your menu orders."*
+     - **Telugu**: *"నేను స్వర, మీ రెస్టారెంట్ అసిస్టెంట్. నేను ఆహారం, వంటకాలు, పదార్థాలు మరియు మెనూ ఆర్డర్‌ల గురించిన ప్రశ్నలకు మాత్రమే సమాధానం ఇవ్వగలను."*
+     - **Hindi**: *"मैं स्वरा हूँ, आपकी रेस्तरां सहायक। मैं केवल भोजन, व्यंजनों, सामग्री और मेनू से संबंधित सवालों के जवाब दे सकती हूँ।"*
+
+---
+
+### 4. Compare Dishes by Spice Level and Price, Then Order
+*Side-by-side comparative matrix helping diners balance heat preferences and budget before placing orders.*
+
+```
+Compare Tab ──▶ Dual Dish Selectors ──▶ Delta Matrix (₹ Difference + Spice Flames) ──▶ 1-Tap Room DB Ordering
+```
+
+#### How It Works:
+1. **Dedicated Comparison Section**:
+   - Accessible from the bottom navigation bar or the 2-second post-scan popup.
+   - Tagline: *"Compare dishes by spice level and price, then order"*.
+2. **Side-by-Side Dual Dish Comparison Mode**:
+   - Diners select **Dish A** and **Dish B** from dropdowns or quick-pick chips.
+   - SvaraAI generates an immediate comparative summary:
+     - **Price Delta**: Visual difference in Rupees and percentages (e.g., *"Dish A is ₹150 (62%) cheaper than Dish B"*).
+     - **Spice Flame Meter**: 0 to 3 flame indicator (0 = Mild, 1 = Gentle Warmth, 2 = Medium Spicy, 3 = Very Spicy).
+     - **Dietary Alignment**: Veg vs. Non-Veg, Jain compatibility, and nut-free safety.
+     - **Flavor & Portions**: Preparation style, gravy consistency, and value recommendation.
+3. **Comprehensive Filter & Sorting**:
+   - **Dietary Filter**: *All*, *Veg*, *Non-Veg*, *Jain*, *Nut-Free*.
+   - **Spice Filter**: *All*, *Mild (0–1)*, *Medium (2)*, *Spicy (3)*.
+   - **Price Sort**: *Price: Low to High*, *Price: High to Low*.
+4. **Scanned Menu & Preloaded Sample Menu Fallback**:
+   - Dynamically loads dishes from the scanned physical menu.
+   - If no menu has been scanned yet, preloads an authentic 8-dish sample menu (*Masala Dosa ₹90, Paneer Butter Masala ₹220, Chilli Chicken ₹240, Hyderabadi Dum Biryani ₹260, Dal Makhani ₹180, Veg Hakka Noodles ₹150, Fish Fry ₹280, Filter Coffee ₹40*).
+5. **Direct 1-Tap Ordering**:
+   - Each compared dish features a Neomorphic "Add to Cart / Order" button with animated checkmark, Room SQLite persistence, haptic vibration, and acoustic confirmation earcon.
+
+---
+
+### 5. Call the Waiter, Ask for the Bill, Split Payment
+*Eliminating cross-language barriers between diners and restaurant staff with real-time translation and smart financial breakdown.*
+
+```
+Diner Speaks (Telugu/Tamil) ──▶ Bhashini NMT ──▶ Bhashini TTS (Hindi/English to Staff) ──▶ Waiter Replies ──▶ Translated Live Captions
+```
+
+#### How It Works:
+1. **The Multilingual Waiter Bridge**:
+   - **Sticky Dual-Microphone Action Bar**:
+     - **"Speak to Waiter" (Diner Mic)**: Prominently docked below the language selector with animated soundwave bars; never scrolls off-screen.
+     - **"Waiter Response" (Staff Mic)**: Allows waitstaff to speak in their native tongue; instantly translates back into diner captions.
+   - **Tabletop 180° Flip Card**: Inverts typography and controls 180 degrees so the phone can be placed flat on the table facing the waiter.
+   - **Quick Phraseboard**: Instant 1-tap category chips for essential dining requests (*"Bring Water"*, *"Get Menu"*, *"Call Captain"*, *"Need Extra Spoon/Plate"*, *"Pack Remaining Food"*).
+2. **Voice Ordering Cart & Statutory Tax Engine**:
+   - Voice-driven cart: say *"Add two Butter Naan and one Dal Tadka"* — SvaraAI parses items and quantities into the cart.
+   - **Statutory Indian Tax Breakdown**: Computes statutory CGST (2.5%) and SGST (2.5%) in integer-paise precision to prevent rounding errors.
+   - **Indic Number Verbalizer**: Bhashini TTS verbalizes exact monetary totals in spoken words across all 6 languages (e.g. Telugu *"ఐదు వందల అరవై రూపాయలు"*).
+3. **Smart Bill Splitter**:
+   - **Equal Split Mode**: Diners select guest count with `+` and `-` steppers; SvaraAI computes per-person share and announces it aloud.
+   - **By-Item Split Mode**: Allocates specific dishes to individual diners, computing custom shares including proportional taxes.
+   - **Spoken Breakdown**: Reads out each diner's exact share in Rupees and Paise.
+
+---
+
+### 6. Give Spoken Feedback or a Complaint to Staff
+*Dignified, voice-activated issue escalation translating customer feedback into staff language.*
+
+```
+Speak Complaint in Any Language ──▶ Bhashini ASR ──▶ Bhashini NMT ──▶ Bhashini TTS Spoken to Waiter + Status Confirmation
+```
+
+#### How It Works:
+1. **Raise Complaint or Feedback Section**:
+   - Located at the bottom of the Waiter Bridge page in a dedicated Neomorphic Card.
+   - Allows patrons to express feedback or escalate critical dining issues without embarrassment or confrontation.
+2. **Voice Input in Any Language**:
+   - The diner taps the feedback microphone and speaks naturally in English, Telugu, Hindi, Tamil, Kannada, or Malayalam:
+     - *"The soup is cold, please heat it up."*
+     - *"We have been waiting 30 minutes for our starter, please check."*
+     - *"This dish is too spicy for the children."*
+     - *"The biryani was delicious, compliment the chef!"*
+3. **Instant Translation & Spoken Playback via Bhashini TTS**:
+   - Transcribes speech via **Bhashini ASR**, translates into the staff's selected language via **Bhashini NMT**, and speaks aloud to the waiter/captain via **Bhashini TTS**.
+4. **6 Instant One-Tap Category Chips**:
+   - For speech-impaired patrons or rapid escalation, 6 pre-configured chips are available:
+     1. *"Food is Cold / Reheat"*
+     2. *"Delay in Order / Follow Up"*
+     3. *"Missing Item from Order"*
+     4. *"Too Spicy / Less Spice"*
+     5. *"Clean Table / Cutlery Request"*
+     6. *"Compliment Chef / Food is Delicious"*
+5. **Manager Status Confirmation**:
+   - Displays a confirmation card with status badge: `"Raised to Floor Manager / Captain"` along with the customer statement in their native language and the translated staff text.
+
+---
+
+## 🌐 Complete Bhashini Integration Matrix
+
+SvaraAI utilizes official Bhashini endpoints across all 6 supported languages:
+
+| Language | Code | Native Name | Bhashini ASR Pipeline | Bhashini NMT Pipeline | Bhashini TTS Pipeline |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Telugu** | `te` | **తెలుగు** | AI4Bharat Conformer Telugu | IndicTrans2 (te ↔ en / te ↔ hi) | IIT Madras Indic-TTS Telugu |
+| **Hindi** | `hi` | **हिन्दी** | AI4Bharat Conformer Hindi | IndicTrans2 (hi ↔ en / hi ↔ te) | IIT Madras Indic-TTS Hindi |
+| **Tamil** | `ta` | **தமிழ்** | AI4Bharat Conformer Tamil | IndicTrans2 (ta ↔ en / ta ↔ hi) | IIT Madras Indic-TTS Tamil |
+| **Kannada** | `kn` | **ಕನ್ನಡ** | AI4Bharat Conformer Kannada | IndicTrans2 (kn ↔ en / kn ↔ hi) | IIT Madras Indic-TTS Kannada |
+| **Malayalam** | `ml` | **മലയാളം** | AI4Bharat Conformer Malayalam | IndicTrans2 (ml ↔ en / ml ↔ hi) | IIT Madras Indic-TTS Malayalam |
+| **English** | `en` | **English** | AI4Bharat Conformer English | IndicTrans2 (en ↔ Indic) | FastSpeech2 Neural English |
+
+---
+
+## 🎨 Neomorphic White Design System
+
+- **Pure White / Slate Palette**: Clean, modern off-white background (`#F0F4F8`) with Royal Cobalt Blue accents (`#2563EB`) and high-contrast Slate typography (`#0F172A`).
+- **Tactile Physics**: Dual-bevel light and shadow specular elevations create physical, embossed surfaces that resemble tangible hardware controls.
+- **Strictly Zero Emojis**: 100% vector Material Icons for maximum screen-reader accessibility and professional aesthetic.
+- **Dynamic Animations**: Pulse ripples on active microphones, animated waveform bars, and smooth transitions across tabs and popups.
 
 ---
 
@@ -232,13 +274,13 @@ SvaraAI is built with a custom **Neomorphic White Design System**:
 git clone https://github.com/IIIT-ECell/megathon26-openvino.git
 cd SvaraAI
 
-# Run all automated unit tests (100% passing)
+# Run all 101 automated unit tests (100% passing)
 ./gradlew testDebugUnitTest
 
-# Build the Debug APK
+# Assemble the Debug APK
 ./gradlew assembleDebug
 
-# Install directly on a connected device via ADB
+# Install directly to connected device
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
