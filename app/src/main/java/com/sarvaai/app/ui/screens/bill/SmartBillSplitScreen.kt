@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -123,7 +124,17 @@ fun SmartBillSplitScreen(
         }
     }
 
-    val itemTotalPaise = cartItems.sumOf { it.totalPricePaise }
+    val defaultSampleCartItems = remember {
+        listOf(
+            CartItemEntity(cartItemId = "sample_1", itemId = "item_1", name = "Masala Dosa", unitPricePaise = 9000L, quantity = 2),
+            CartItemEntity(cartItemId = "sample_2", itemId = "item_2", name = "Paneer Butter Masala", unitPricePaise = 22000L, quantity = 1),
+            CartItemEntity(cartItemId = "sample_3", itemId = "item_3", name = "Filter Coffee", unitPricePaise = 4000L, quantity = 2)
+        )
+    }
+    val activeBillItems = if (cartItems.isNotEmpty()) cartItems else defaultSampleCartItems
+    val isUsingSampleBill = cartItems.isEmpty()
+
+    val itemTotalPaise = activeBillItems.sumOf { it.totalPricePaise }
     val billBreakdown = remember(itemTotalPaise, applyServiceCharge) {
         BillCalculator.calculateBill(itemTotalPaise, applyServiceCharge)
     }
@@ -132,8 +143,8 @@ fun SmartBillSplitScreen(
         BillCalculator.splitEqually(billBreakdown.totalPaise, participantCount)
     }
 
-    val itemShares = remember(cartItems, itemAssignments, participantCount, applyServiceCharge) {
-        BillCalculator.splitByItemAssignment(cartItems, itemAssignments, participantCount, applyServiceCharge)
+    val itemShares = remember(activeBillItems, itemAssignments, participantCount, applyServiceCharge) {
+        BillCalculator.splitByItemAssignment(activeBillItems, itemAssignments, participantCount, applyServiceCharge)
     }
 
     val displayedShares = if (splitMode == "EQUAL") equalShares else itemShares
@@ -633,6 +644,125 @@ fun SmartBillSplitScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        // ============================================================
+                        // PROMINENT SPLIT BILL HIGHLIGHT BOX
+                        // ============================================================
+                        val perPersonShareRupees = remember(billBreakdown.totalRupees, participantCount) {
+                            (billBreakdown.totalRupees + participantCount - 1) / participantCount.coerceAtLeast(1)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(NeoPrimaryContainer)
+                                .border(1.5.dp, NeoPrimary.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                                .padding(12.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Groups,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (splitMode == "EQUAL") "SPLIT BILL ($participantCount DINERS)" else "ITEMIZED SPLIT ($participantCount DINERS)",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoPrimary,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+                                    if (isUsingSampleBill) {
+                                        Text(
+                                            text = "Sample Bill",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoTextSecondary,
+                                            modifier = Modifier
+                                                .background(NeoSurface, RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        if (splitMode == "EQUAL") {
+                                            Text(
+                                                text = "₹$perPersonShareRupees / person",
+                                                fontSize = 24.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Total ₹${billBreakdown.totalRupees} ÷ $participantCount diners = ₹$perPersonShareRupees each",
+                                                fontSize = 11.sp,
+                                                color = NeoTextSecondary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Custom per Diner",
+                                                fontSize = 20.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = NeoTextPrimary
+                                            )
+                                            Text(
+                                                text = "Assigned by individual dish consumption below",
+                                                fontSize = 11.sp,
+                                                color = NeoTextSecondary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+
+                                    // Spoken Split Button
+                                    IconButton(
+                                        onClick = {
+                                            hapticEngine.trigger(HapticPattern.CONFIRMATION)
+                                            earconEngine.play(EarconType.ORDER_CONFIRMED)
+                                            val splitNarration = if (splitMode == "EQUAL") {
+                                                val wordShare = NumberVerbalizer.verbalizePrice(perPersonShareRupees, selectedLanguage)
+                                                "For $participantCount diners, each person pays $perPersonShareRupees rupees. Total bill is ${billBreakdown.totalRupees} rupees. $wordShare"
+                                            } else {
+                                                "Itemized bill split across $participantCount diners. Total bill is ${billBreakdown.totalRupees} rupees."
+                                            }
+                                            onSpeakNarration(splitNarration)
+                                        },
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(NeoSurface)
+                                            .border(1.dp, NeoPrimary.copy(alpha = 0.3f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                            contentDescription = "Hear split bill",
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         // Spoken breakdown audio button styled with neomorphic bevels
                         val hearInteractionSource = remember { MutableInteractionSource() }
                         val isHearPressed by hearInteractionSource.collectIsPressedAsState()
@@ -1057,68 +1187,44 @@ fun SmartBillSplitScreen(
                 // ============================================================
                 // 6. DISHES LIST OR ITEM-BY-ITEM ASSIGNMENT & DINER SHARES
                 // ============================================================
-                if (cartItems.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.92f)
-                                .neomorphicSurface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    surfaceColor = NeoSurface,
-                                    elevation = 4.dp,
-                                    cornerRadius = 20.dp
-                                )
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    if (isUsingSampleBill) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(NeoSurfacePressed)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(60.dp)
-                                        .clip(CircleShape)
-                                        .background(NeoSurfacePressed)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                                        imageVector = Icons.Default.Info,
                                         contentDescription = null,
-                                        tint = NeoTextMuted,
-                                        modifier = Modifier.size(30.dp)
+                                        tint = NeoPrimary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Sample Bill Loaded: Masala Dosa (x2), Paneer Butter Masala, Filter Coffee (x2). Add dishes anytime.",
+                                        fontSize = 11.sp,
+                                        color = NeoTextSecondary,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = "No items in bill yet",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = NeoTextPrimary
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Tap the microphone below or choose quick dishes above to build bill",
-                                    fontSize = 12.sp,
-                                    color = NeoTextSecondary,
-                                    textAlign = TextAlign.Center
-                                )
                             }
                         }
                     }
-                } else {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) {
-                        // In Item split mode: show assignment selector
-                        if (splitMode == "ITEM") {
+
+                    // In Item split mode: show assignment selector
+                    if (splitMode == "ITEM") {
                             item {
                                 Box(
                                     modifier = Modifier
@@ -1192,7 +1298,7 @@ fun SmartBillSplitScreen(
 
                                         Spacer(modifier = Modifier.height(10.dp))
 
-                                        cartItems.forEach { item ->
+                                        activeBillItems.forEach { item ->
                                             val currentAssigned = itemAssignments[selectedPersonForAssignment] ?: emptyList()
                                             val isChecked = currentAssigned.contains(item.cartItemId)
 
@@ -1366,7 +1472,6 @@ fun SmartBillSplitScreen(
                             }
                         }
                     }
-                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 

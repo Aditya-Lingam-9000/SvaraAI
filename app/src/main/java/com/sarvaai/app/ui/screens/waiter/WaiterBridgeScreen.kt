@@ -713,143 +713,258 @@ fun WaiterBridgeScreen(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                // ITEM 1: OUTWARD-FACING STAFF CARD (Clean High-Contrast Typography, Flip Button)
+                // DYNAMIC REACTIVE SPEECH EXCHANGE CARD (Shows whoever speaks - Diner or Waiter)
                 item {
+                    val hasDinerSpoken = state.activeSpeaker == "DINER" || (state.activeStaffCardText.isNotBlank() && state.activeSpeaker != "STAFF")
+                    val hasStaffSpoken = state.activeSpeaker == "STAFF"
+                    val isIdle = !hasDinerSpoken && !hasStaffSpoken && state.activeStaffCardText.isBlank() && state.liveDinerCaption.isBlank()
+
                     Card(
                         colors = CardDefaults.cardColors(containerColor = NeoSurface),
                         shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(2.dp, NeoPrimary),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        border = BorderStroke(1.5.dp, if (isIdle) NeoBorder else NeoPrimary),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .rotate(if (state.isFlippedForStaff) 180f else 0f)
                             .semantics(mergeDescendants = true) {
-                                contentDescription = "Staff display showing: ${state.activeStaffCardText}"
+                                contentDescription = when {
+                                    hasStaffSpoken -> "Waiter response: ${state.liveDinerCaption}"
+                                    hasDinerSpoken -> "Diner message for staff: ${state.activeStaffCardText}"
+                                    else -> "Ready for conversation between diner and waiter"
+                                }
                             }
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .padding(14.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Visibility,
-                                        contentDescription = null,
-                                        tint = NeoPrimary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                            if (isIdle) {
+                                // IDLE / READY STATE (Clean placeholder explaining who speaks where - zero unrelated greetings)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Translate,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "LIVE SPEECH EXCHANGE",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoPrimary,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                    }
                                     Text(
-                                        text = "SHOW TO WAITER / STAFF",
+                                        text = "${state.dinerLanguage.uppercase()} ⇄ ${state.staffLanguage.uppercase()}",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = NeoPrimary,
-                                        letterSpacing = 0.8.sp
+                                        color = NeoTextSecondary
                                     )
                                 }
 
-                                IconButton(
-                                    onClick = {
-                                        hapticEngine.trigger(HapticPattern.CLICK)
-                                        onSpeakAudio(state.activeStaffCardText, state.staffLanguage)
-                                    },
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(NeoPrimaryContainer)
-                                        .border(1.dp, NeoPrimary.copy(alpha = 0.4f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                        contentDescription = "Play loudly to staff",
-                                        tint = NeoPrimary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = state.activeStaffCardText,
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = NeoTextPrimary,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 32.sp
-                            )
-
-                            if (state.activeStaffCardSubtext.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = state.activeStaffCardSubtext,
+                                    text = "Ready to Talk",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = NeoTextPrimary,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Text(
+                                    text = "Tap 'Speak to Waiter' to talk, or hold 'Waiter Response' for waiter to reply. Live translation will appear here.",
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = FontWeight.Normal,
                                     color = NeoTextSecondary,
-                                    textAlign = TextAlign.Center
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else if (hasStaffSpoken) {
+                                // WAITER (STAFF) SPOKE ➔ TRANSLATED FOR DINER
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Hearing,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "WAITER (STAFF) SPOKE ➔ TRANSLATED FOR YOU",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoPrimary,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            hapticEngine.trigger(HapticPattern.CLICK)
+                                            onSpeakAudio(state.liveDinerCaption, state.dinerLanguage)
+                                        },
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(NeoPrimaryContainer)
+                                            .border(1.dp, NeoPrimary.copy(alpha = 0.4f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                            contentDescription = "Replay waiter translation",
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                if (state.activeStaffCardText.isNotBlank()) {
+                                    Text(
+                                        text = "Waiter (${state.staffLanguage.uppercase()}): ${state.activeStaffCardText}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = NeoTextSecondary
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+
+                                Text(
+                                    text = state.liveDinerCaption.ifBlank { "..." },
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = NeoTextPrimary,
+                                    lineHeight = 30.sp
+                                )
+                            } else {
+                                // DINER SPOKE ➔ TRANSLATED FOR STAFF
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.RecordVoiceOver,
+                                            contentDescription = null,
+                                            tint = NeoPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "YOU (DINER) SPOKE ➔ TRANSLATED FOR STAFF",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = NeoPrimary,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = {
+                                                hapticEngine.trigger(HapticPattern.CLICK)
+                                                controller.toggleFlipForStaff()
+                                            },
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(NeoSurface)
+                                                .border(1.dp, NeoBorder, CircleShape)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ScreenRotation,
+                                                contentDescription = "Flip 180 degrees for staff",
+                                                tint = NeoTextSecondary,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        IconButton(
+                                            onClick = {
+                                                hapticEngine.trigger(HapticPattern.CLICK)
+                                                onSpeakAudio(state.activeStaffCardText, state.staffLanguage)
+                                            },
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(NeoPrimaryContainer)
+                                                .border(1.dp, NeoPrimary.copy(alpha = 0.4f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                                contentDescription = "Play loudly to staff",
+                                                tint = NeoPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                val dinerVoice = state.activeStaffCardSubtext.ifBlank { state.liveDinerCaption }
+                                if (dinerVoice.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "You (${state.dinerLanguage.uppercase()}): $dinerVoice",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = NeoTextSecondary
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = state.activeStaffCardText.ifBlank { "..." },
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = NeoTextPrimary,
+                                    lineHeight = 30.sp
                                 )
                             }
-                        }
-                    }
-                }
 
-                // ITEM 2: LIVE DINER TRANSLATION / WAITER RESPONSE CARD
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = NeoSurface),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.5.dp, NeoBorder),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Translate,
-                                        contentDescription = null,
-                                        tint = NeoPrimary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "LIVE TRANSLATION / WAITER REPLIES",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = NeoTextSecondary,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-
-                                if (state.isProcessing) {
+                            if (state.isProcessing) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
                                     CircularProgressIndicator(
                                         color = NeoPrimary,
                                         modifier = Modifier.size(14.dp),
                                         strokeWidth = 2.dp
                                     )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Translating speech...",
+                                        fontSize = 11.sp,
+                                        color = NeoPrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = state.liveDinerCaption,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = NeoTextPrimary,
-                                lineHeight = 20.sp
-                            )
                         }
                     }
                 }

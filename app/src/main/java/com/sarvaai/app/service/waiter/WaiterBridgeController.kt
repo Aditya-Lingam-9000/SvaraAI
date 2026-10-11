@@ -14,9 +14,9 @@ import kotlinx.coroutines.withContext
 data class WaiterBridgeState(
     val dinerLanguage: String = "te",
     val staffLanguage: String = "hi",
-    val activeStaffCardText: String = "नमस्ते! मैं आपकी क्या मदद कर सकता हूँ?",
-    val activeStaffCardSubtext: String = "Hello! How can I help you?",
-    val liveDinerCaption: String = "సర్వర్ మాట్లాడే మాటలు ఇక్కడ అనువదించబడతాయి (Server speech will appear here).",
+    val activeStaffCardText: String = "",
+    val activeStaffCardSubtext: String = "",
+    val liveDinerCaption: String = "",
     val isFlippedForStaff: Boolean = false,
     val isProcessing: Boolean = false,
     val activeSpeaker: String = "NONE", // "DINER", "STAFF", "NONE"
@@ -179,8 +179,8 @@ class WaiterBridgeController(
                     _state.value = _state.value.copy(
                         isProcessing = false,
                         activeStaffCardText = originalStaffSpeech,
-                        activeStaffCardSubtext = engTranslation,
-                        liveDinerCaption = "🗣️ Waiter: $translatedDinerText"
+                        activeStaffCardSubtext = translatedDinerText,
+                        liveDinerCaption = translatedDinerText
                     )
                     onSpeakToDiner?.invoke(translatedDinerText, dinerLang)
                 }
