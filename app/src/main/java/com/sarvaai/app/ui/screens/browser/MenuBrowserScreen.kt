@@ -284,7 +284,6 @@ fun MenuBrowserScreen(
     // Auto-Start Listening Trigger when awakened by 'Hey Svara' or Wake Word
     LaunchedEffect(autoStartListeningTrigger) {
         if (autoStartListeningTrigger > 0) {
-            earconEngine.play(EarconType.LISTEN_START)
             hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
             if (audioRecorder != null && !audioRecorder.isRecording.value) {
                 startListening()

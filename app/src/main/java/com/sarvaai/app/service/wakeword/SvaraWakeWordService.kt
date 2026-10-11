@@ -26,43 +26,27 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.sarvaai.app.MainActivity
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
-import com.sarvaai.app.audio.earcons.EarconEngine
-import com.sarvaai.app.audio.earcons.EarconType
-import com.sarvaai.app.audio.recorder.WavEncoder
-import com.sarvaai.app.audio.vad.EnergyVad
-import com.sarvaai.app.audio.vad.VadStatus
-import com.sarvaai.app.bhashini.asr.AsrNmtClient
-import com.sarvaai.app.core.result.Result
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
 import java.util.ArrayList
 
 /**
  * Continuous Hotword Foreground Service.
- * Implements persistent background listening for 'Hey Svara' and handles voice shutdown commands.
+ * Implements persistent background listening for 'Hey Svara' using Android SpeechRecognizer.
+ * Coordinates exclusive microphone access with MainActivity to prevent mic contention and audio feedback loops.
  */
 class SvaraWakeWordService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val earconEngine by lazy { EarconEngine(this) }
-    private val asrClient = AsrNmtClient()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var speechRecognizer: SpeechRecognizer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var isListeningActive: Boolean = false
     private var isCurrentlyRecognizing: Boolean = false
     private var errorRetryCount: Int = 0
-    private var pcmWorkerJob: Job? = null
-    private var continuousAudioRecord: AudioRecord? = null
+    private var lastWakeTriggerTime: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -82,7 +66,7 @@ class SvaraWakeWordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
-        Log.d(TAG, "onStartCommand received action: $action")
+        Log.d(TAG, "onStartCommand received action: $action (isAppInForeground=$isAppInForeground)")
 
         when (action) {
             ACTION_STOP_SERVICE -> {
@@ -91,9 +75,21 @@ class SvaraWakeWordService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            ACTION_PAUSE_LISTENING -> {
+                Log.i(TAG, "Pausing wake word listening (app is in foreground)")
+                pauseWakeWordListening()
+            }
+            ACTION_RESUME_LISTENING -> {
+                Log.i(TAG, "Resuming wake word listening (isAppInForeground=$isAppInForeground, isServiceRunning=$isServiceRunning)")
+                if (!isAppInForeground && isServiceRunning) {
+                    startWakeWordListening()
+                }
+            }
             ACTION_START_SERVICE, null -> {
                 startAsForeground()
-                startWakeWordListening()
+                if (!isAppInForeground) {
+                    startWakeWordListening()
+                }
             }
         }
 
@@ -211,14 +207,25 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun startWakeWordListening() {
-        if (isListeningActive) return
+        if (isListeningActive || isAppInForeground) {
+            Log.d(TAG, "startWakeWordListening skipped: isListeningActive=$isListeningActive, isAppInForeground=$isAppInForeground")
+            return
+        }
         isListeningActive = true
         errorRetryCount = 0
 
         mainHandler.post {
             initAndStartSpeechRecognizer()
         }
-        startContinuousPcmWakeWordStream()
+    }
+
+    private fun pauseWakeWordListening() {
+        Log.d(TAG, "pauseWakeWordListening called")
+        isListeningActive = false
+        mainHandler.removeCallbacksAndMessages(null)
+        mainHandler.post {
+            safeDestroyRecognizer()
+        }
     }
 
     private fun stopWakeWordListening() {
@@ -228,7 +235,6 @@ class SvaraWakeWordService : Service() {
         mainHandler.post {
             safeDestroyRecognizer()
         }
-        stopContinuousPcmStream()
         try {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
@@ -238,158 +244,8 @@ class SvaraWakeWordService : Service() {
         }
     }
 
-    private fun startContinuousPcmWakeWordStream() {
-        pcmWorkerJob?.cancel()
-        pcmWorkerJob = serviceScope.launch {
-            val sampleRate = 16000
-            val channelConfig = AudioFormat.CHANNEL_IN_MONO
-            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            val frameBytes = 640 // 20ms at 16kHz 16-bit
-            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-            if (minBuf <= 0) return@launch
-
-            val vad = EnergyVad(sampleRate = sampleRate, frameDurationMs = 20, silenceTimeoutMs = 800L, maxUtteranceDurationMs = 3000L)
-            val pcmBuffer = ByteArray(frameBytes)
-            val utteranceStream = ByteArrayOutputStream()
-            val preRollCapacity = 15
-            val preRoll = ArrayDeque<ByteArray>(preRollCapacity)
-            var capturingUtterance = false
-
-            while (isActive && isListeningActive) {
-                var record: AudioRecord? = null
-                try {
-                    record = AudioRecord(
-                        MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                        sampleRate,
-                        channelConfig,
-                        audioFormat,
-                        (minBuf * 2).coerceAtLeast(frameBytes * 4)
-                    )
-                    if (record.state != AudioRecord.STATE_INITIALIZED) {
-                        try { record.release() } catch (_: Throwable) {}
-                        record = AudioRecord(
-                            MediaRecorder.AudioSource.MIC,
-                            sampleRate,
-                            channelConfig,
-                            audioFormat,
-                            (minBuf * 2).coerceAtLeast(frameBytes * 4)
-                        )
-                    }
-
-                    if (record.state != AudioRecord.STATE_INITIALIZED) {
-                        try { record.release() } catch (_: Throwable) {}
-                        kotlinx.coroutines.delay(1000L)
-                        continue
-                    }
-
-                    continuousAudioRecord = record
-                    record.startRecording()
-                    vad.reset()
-
-                    while (isActive && isListeningActive && record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                        val readBytes = try {
-                            record.read(pcmBuffer, 0, frameBytes)
-                        } catch (t: Throwable) {
-                            -1
-                        }
-
-                        if (readBytes > 0) {
-                            val status = vad.processFrame(pcmBuffer, readBytes)
-                            when (status) {
-                                VadStatus.SPEECH_ACTIVE -> {
-                                    if (!capturingUtterance) {
-                                        capturingUtterance = true
-                                        while (preRoll.isNotEmpty()) {
-                                            utteranceStream.write(preRoll.removeFirst())
-                                        }
-                                    }
-                                    utteranceStream.write(pcmBuffer, 0, readBytes)
-                                }
-                                VadStatus.SPEECH_ENDED -> {
-                                    if (capturingUtterance && utteranceStream.size() > 0) {
-                                        val rawPcm = utteranceStream.toByteArray()
-                                        utteranceStream.reset()
-                                        capturingUtterance = false
-                                        val wavBytes = WavEncoder.encodeToWav(rawPcm, sampleRate)
-                                        // Process utterance asynchronously
-                                        serviceScope.launch {
-                                            checkUtteranceForHotwords(wavBytes)
-                                        }
-                                    }
-                                }
-                                VadStatus.CALIBRATING, VadStatus.SILENCE -> {
-                                    if (capturingUtterance) {
-                                        utteranceStream.write(pcmBuffer, 0, readBytes)
-                                    } else {
-                                        if (preRoll.size >= preRollCapacity) {
-                                            preRoll.removeFirst()
-                                        }
-                                        preRoll.addLast(pcmBuffer.copyOf(readBytes))
-                                    }
-                                }
-                            }
-                        } else if (readBytes < 0) {
-                            break
-                        }
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "Continuous PCM audio loop exception: ${e.message}")
-                } finally {
-                    try {
-                        if (record?.state == AudioRecord.STATE_INITIALIZED) {
-                            if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                                try { record.stop() } catch (_: Throwable) {}
-                            }
-                            try { record.release() } catch (_: Throwable) {}
-                        }
-                    } catch (_: Throwable) {}
-                    continuousAudioRecord = null
-                }
-                kotlinx.coroutines.delay(500L)
-            }
-        }
-    }
-
-    private suspend fun checkUtteranceForHotwords(wavBytes: ByteArray) {
-        if (wavBytes.isEmpty()) return
-        try {
-            val res = asrClient.transcribeAndTranslate(wavBytes, "en")
-            if (res is Result.Success) {
-                val transcript = res.data.originalTranscript.trim()
-                val translation = res.data.englishTranslation.trim()
-                Log.d(TAG, "PCM Stream ASR Transcript: '$transcript' | Translation: '$translation'")
-
-                if (WakeWordDetector.isWakeWord(transcript) || WakeWordDetector.isWakeWord(translation)) {
-                    Log.i(TAG, "Wake word matched in continuous PCM stream! Triggering open.")
-                    mainHandler.post { triggerWakeWordDetected() }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error evaluating hotword ASR: ${e.message}")
-        }
-    }
-
-    private fun stopContinuousPcmStream() {
-        pcmWorkerJob?.cancel()
-        pcmWorkerJob = null
-        try {
-            continuousAudioRecord?.let { record ->
-                if (record.state == AudioRecord.STATE_INITIALIZED) {
-                    if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                        try { record.stop() } catch (_: Throwable) {}
-                    }
-                    try { record.release() } catch (_: Throwable) {}
-                }
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "Error stopping continuous AudioRecord: ${t.message}")
-        } finally {
-            continuousAudioRecord = null
-        }
-    }
-
     private fun initAndStartSpeechRecognizer() {
-        if (!isListeningActive) return
+        if (!isListeningActive || isAppInForeground) return
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             Log.w(TAG, "SpeechRecognizer is not available on this device")
@@ -409,7 +265,7 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun beginListeningLoop() {
-        if (!isListeningActive || isCurrentlyRecognizing) return
+        if (!isListeningActive || isCurrentlyRecognizing || isAppInForeground) return
 
         val recognizer = speechRecognizer ?: return
         val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -466,7 +322,7 @@ class SvaraWakeWordService : Service() {
                 } catch (e: Exception) {
                     Log.w(TAG, "Error cancelling speech recognizer on error: ${e.message}")
                 }
-                if (!isListeningActive) return
+                if (!isListeningActive || isAppInForeground) return
 
                 val delay = when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH,
@@ -479,7 +335,7 @@ class SvaraWakeWordService : Service() {
                 if (errorRetryCount > 3 || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
                     errorRetryCount = 0
                     mainHandler.postDelayed({
-                        if (isListeningActive) {
+                        if (isListeningActive && !isAppInForeground) {
                             initAndStartSpeechRecognizer()
                         }
                     }, delay)
@@ -496,12 +352,13 @@ class SvaraWakeWordService : Service() {
                     processRecognizedHypotheses(matches)
                 }
 
-                if (isListeningActive) {
+                if (isListeningActive && !isAppInForeground) {
                     scheduleRestartListening(LOOP_REARM_DELAY_MS)
                 }
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
+                if (!isListeningActive || isAppInForeground) return
                 val matches: ArrayList<String>? = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (matches != null) {
                     for (text in matches) {
@@ -519,6 +376,7 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun processRecognizedHypotheses(matches: List<String>) {
+        if (!isListeningActive || isAppInForeground) return
         for (text in matches) {
             if (WakeWordDetector.isWakeWord(text)) {
                 Log.i(TAG, "Wake word matched onResults: '$text'")
@@ -529,9 +387,16 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun triggerWakeWordDetected() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastWakeTriggerTime < 8000L) {
+            Log.w(TAG, "Wake word trigger ignored: 8-second cooldown active (${now - lastWakeTriggerTime}ms < 8000ms)")
+            return
+        }
+        lastWakeTriggerTime = now
+
         Log.i(TAG, "Triggering wake word detected: bringing MainActivity to foreground and starting listening")
 
-        // 1. Immediate tactile vibration feedback
+        // 1. Immediate tactile vibration feedback ONLY (NO speaker sound to prevent acoustic loop!)
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val manager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
@@ -552,12 +417,8 @@ class SvaraWakeWordService : Service() {
             Log.w(TAG, "Wake word vibrator error: ${e.message}")
         }
 
-        // 2. Immediate acoustic earcon / notification sound feedback
-        try {
-            earconEngine.play(EarconType.LISTEN_START)
-        } catch (e: Exception) {
-            Log.w(TAG, "Wake word earcon error: ${e.message}")
-        }
+        // Pause listening immediately so MainActivity can take over exclusive mic access
+        pauseWakeWordListening()
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -608,10 +469,10 @@ class SvaraWakeWordService : Service() {
     }
 
     private fun scheduleRestartListening(delayMs: Long) {
-        if (!isListeningActive) return
+        if (!isListeningActive || isAppInForeground) return
         mainHandler.removeCallbacksAndMessages(null)
         mainHandler.postDelayed({
-            if (isListeningActive) {
+            if (isListeningActive && !isAppInForeground) {
                 beginListeningLoop()
             }
         }, delayMs)
@@ -648,11 +509,16 @@ class SvaraWakeWordService : Service() {
 
         const val ACTION_START_SERVICE = "com.sarvaai.app.action.START_WAKE_WORD_SERVICE"
         const val ACTION_STOP_SERVICE = "com.sarvaai.app.action.STOP_WAKE_WORD_SERVICE"
+        const val ACTION_PAUSE_LISTENING = "com.sarvaai.app.action.PAUSE_LISTENING"
+        const val ACTION_RESUME_LISTENING = "com.sarvaai.app.action.RESUME_LISTENING"
         const val ACTION_CLOSE_APP = "com.sarvaai.app.ACTION_CLOSE_APP"
         const val EXTRA_AUTO_START_LISTENING = "EXTRA_AUTO_START_LISTENING"
 
         private const val RETRY_DELAY_MS = 600L
         private const val LOOP_REARM_DELAY_MS = 250L
+
+        @Volatile
+        var isAppInForeground: Boolean = false
 
         @Volatile
         var isServiceRunning: Boolean = false
@@ -666,6 +532,28 @@ class SvaraWakeWordService : Service() {
                 ContextCompat.startForegroundService(context, intent)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start SvaraWakeWordService: ${e.message}", e)
+            }
+        }
+
+        fun pauseListening(context: Context) {
+            try {
+                val intent = Intent(context, SvaraWakeWordService::class.java).apply {
+                    action = ACTION_PAUSE_LISTENING
+                }
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to pause SvaraWakeWordService: ${e.message}", e)
+            }
+        }
+
+        fun resumeListening(context: Context) {
+            try {
+                val intent = Intent(context, SvaraWakeWordService::class.java).apply {
+                    action = ACTION_RESUME_LISTENING
+                }
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to resume SvaraWakeWordService: ${e.message}", e)
             }
         }
 

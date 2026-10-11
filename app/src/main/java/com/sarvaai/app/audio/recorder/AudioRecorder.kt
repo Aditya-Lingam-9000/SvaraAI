@@ -110,6 +110,8 @@ class AudioRecorder(
                     val preRollCapacity = 20 // 20 frames * 20ms = 400ms pre-roll buffer
                     val preRollBuffer = ArrayDeque<ByteArray>(preRollCapacity)
                     var speechCaptured = false
+                    var discardedInitialFrames = 0
+                    val initialFramesToDiscard = 8 // Discard initial ~160ms to prevent LISTEN_START earcon pickup
 
                     try {
                         while (isActive && isRecordingActive) {
@@ -124,6 +126,11 @@ class AudioRecorder(
                             }
 
                             if (readBytes > 0) {
+                                if (discardedInitialFrames < initialFramesToDiscard) {
+                                    discardedInitialFrames++
+                                    continue
+                                }
+
                                 val status = vad.processFrame(pcmBuffer, readBytes)
                                 _vadStatus.value = status
 
@@ -148,12 +155,15 @@ class AudioRecorder(
                                         utteranceStream.write(pcmBuffer, 0, readBytes)
                                     }
                                     VadStatus.SPEECH_ENDED -> {
-                                        if (speechCaptured && utteranceStream.size() > 0) {
+                                        if (speechCaptured && utteranceStream.size() >= 3200) {
                                             val rawPcm = utteranceStream.toByteArray()
                                             val wavBytes = WavEncoder.encodeToWav(rawPcm, SAMPLE_RATE)
+                                            Log.d(TAG, "Speech utterance complete: ${rawPcm.size} bytes (${rawPcm.size / 32}ms speech)")
                                             withContext(Dispatchers.Main) {
                                                 onUtteranceComplete(wavBytes)
                                             }
+                                        } else {
+                                            Log.d(TAG, "Speech ended without minimum required speech data (captured=$speechCaptured, size=${utteranceStream.size()} bytes), skipping callback")
                                         }
                                         stopRecording()
                                         break

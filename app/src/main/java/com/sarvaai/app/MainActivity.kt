@@ -148,9 +148,6 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, false) ||
             intent.getBooleanExtra("EXTRA_AUTO_START_LISTENING", false)) {
             Log.i("MainActivity", "onNewIntent received EXTRA_AUTO_START_LISTENING")
-            if (::earconEngine.isInitialized) {
-                earconEngine.play(EarconType.LISTEN_START)
-            }
             if (::hapticEngine.isInitialized) {
                 hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
             }
@@ -201,7 +198,6 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(WakeWordDetector.EXTRA_AUTO_START_LISTENING, false) == true ||
             intent?.getBooleanExtra("EXTRA_AUTO_START_LISTENING", false) == true) {
             Log.i("MainActivity", "onCreate received EXTRA_AUTO_START_LISTENING")
-            earconEngine.play(EarconType.LISTEN_START)
             hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
             autoStartListeningTrigger++
         }
@@ -589,8 +585,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        SvaraWakeWordService.isAppInForeground = true
+        SvaraWakeWordService.pauseListening(this)
+    }
+
     override fun onPause() {
         super.onPause()
+        SvaraWakeWordService.isAppInForeground = false
+        SvaraWakeWordService.resumeListening(this)
         stopGlobalSpeech()
         if (::audioRecorder.isInitialized) {
             audioRecorder.stopRecording()
@@ -982,7 +986,6 @@ fun MainAudioPlaygroundScreen(
     ) { granted ->
         if (granted) {
             hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
-            earconEngine.play(EarconType.LISTEN_START)
         }
     }
 
@@ -1155,7 +1158,6 @@ fun MainAudioPlaygroundScreen(
     // Auto-Start Listening Trigger when awakened by 'Hey Svara' or Voice Intent
     LaunchedEffect(autoStartListeningTrigger) {
         if (autoStartListeningTrigger > 0) {
-            earconEngine.play(EarconType.LISTEN_START)
             hapticEngine.trigger(HapticPattern.SPEECH_TURN_CUE)
             currentSpokenCaption = "Listening for your voice..."
             if (!isRecording) {

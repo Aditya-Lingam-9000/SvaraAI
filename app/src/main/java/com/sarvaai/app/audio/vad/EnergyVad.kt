@@ -12,7 +12,7 @@ enum class VadStatus {
 class EnergyVad(
     private val sampleRate: Int = 16000,
     private val frameDurationMs: Int = 20,
-    private var silenceTimeoutMs: Long = 1200L,
+    private var silenceTimeoutMs: Long = 1500L,
     private val maxUtteranceDurationMs: Long = 12000L
 ) {
     private var noiseFloorRms = 100.0
@@ -45,11 +45,11 @@ class EnergyVad(
             return VadStatus.CALIBRATING
         }
 
-        val speechThreshold = (noiseFloorRms * 2.0).coerceIn(200.0, 1600.0)
+        val speechThreshold = (noiseFloorRms * 2.2).coerceIn(350.0, 2000.0)
 
         if (rms > speechThreshold) {
             speechFramesConsecutive++
-            if (speechFramesConsecutive >= 1) {
+            if (speechFramesConsecutive >= 3) {
                 if (!speechStarted) {
                     speechStarted = true
                     speechStartTimeMs = now
